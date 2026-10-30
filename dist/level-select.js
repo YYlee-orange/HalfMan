@@ -27,14 +27,21 @@ const seeded=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return n-Math.floor(
 const gapWeight=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return .82+(n-Math.floor(n))*.48;};
 export function levelMapLayout(width,height){
   const radius=Math.max(39,Math.min(76,height*.19)),edge=Math.max(110,radius*1.05+36);
-  const gap=Math.max(360,width*.38),weights=LEVELS.slice(1).map((_,i)=>gapWeight(i)),total=weights.reduce((a,b)=>a+b,0);
+  const gap=Math.max(280,width*.29),weights=LEVELS.slice(1).map((_,i)=>gapWeight(i)),total=weights.reduce((a,b)=>a+b,0);
   const trackWidth=edge*2+gap*total;
   let offset=0;
-  return{width:trackWidth,height,radius,nodes:LEVELS.map((level,i)=>{
+  const nodes=LEVELS.map((level,i)=>{
     if(i)offset+=weights[i-1];
     const r=radius*LEVEL_ART[level.id].size,top=r+12,bottom=Math.max(top,height-r-74);
     const y=top+(bottom-top)*[.58,.05,.94,.28,.78,.12][i%6];
     return{...level,x:edge+gap*offset,y,labelY:y+r+18,radius:r};
+  });
+  const slopes=nodes.slice(1).map((n,i)=>(n.y-nodes[i].y)/(n.x-nodes[i].x));
+  return{width:trackWidth,height,radius,nodes:nodes.map((node,i)=>{
+    const incoming=slopes[i-1],outgoing=slopes[i];
+    // A shared tangent at each centre joins both neighbouring curves smoothly.
+    const slope=i===0?outgoing:i===nodes.length-1?incoming:incoming*outgoing<=0?0:Math.sign(incoming)*Math.min(Math.abs(incoming),Math.abs(outgoing));
+    return{...node,slope};
   })};
 }
 export function levelJelly(age,reduced=false){
@@ -111,10 +118,9 @@ export function drawLevelFlames(ctx,frame,{reduced=false,x=0,y=0}={}){
   for(const node of frame.nodes){const plume=levelFlame(node,frame.time,reduced);if(plume)drawPlume(ctx,plume.trail,frame.time,(x,y)=>({x,y}),{character:1,reduced});}
   ctx.restore();
 }
-export function levelLinkCurve(a,b,index,height){
-  const dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy),nx=-dy/(length||1),ny=dx/(length||1);
-  const bend=Math.min(108,height*.16,length*.26)*(index%2?-1:1);
-  const c1={x:a.x+dx/3+nx*bend,y:a.y+dy/3+ny*bend},c2={x:a.x+dx*2/3+nx*bend,y:a.y+dy*2/3+ny*bend};
+export function levelLinkCurve(a,b){
+  const dx=b.x-a.x,secant=(b.y-a.y)/(dx||1),ha=Math.max(dx/3,a.radius+42),hb=Math.max(dx/3,b.radius+42);
+  const c1={x:a.x+ha,y:a.y+(a.slope??secant)*ha},c2={x:b.x-hb,y:b.y-(b.slope??secant)*hb};
   // Trim along each centre-to-control ray, preserving a radial endpoint tangent.
   const da=Math.hypot(c1.x-a.x,c1.y-a.y)||1,db=Math.hypot(c2.x-b.x,c2.y-b.y)||1;
   const start={x:a.x+(c1.x-a.x)*(a.radius+24)/da,y:a.y+(c1.y-a.y)*(a.radius+24)/da};
@@ -127,7 +133,7 @@ export function drawLevelMap(ctx,frame,{dark=false,reduced=false}={}){
   for(const [index,link]of frame.links.entries()){
     // Route anchors belong to the map, independently of rock float and jelly.
     const a=frame.anchors.find(n=>n.id===link.from),b=frame.anchors.find(n=>n.id===link.to);
-    const {start,end,c1,c2}=levelLinkCurve(a,b,index,frame.height);
+    const {start,end,c1,c2}=levelLinkCurve(a,b);
     const samples=[{...start,length:0}];
     // Equal curve parameters bunch up at the ends. Sample arc length instead.
     for(let i=1;i<=80;i++){

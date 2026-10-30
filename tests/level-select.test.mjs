@@ -57,10 +57,15 @@ test('captions and belt positions stay fixed while rocks animate and belt sizes 
   scene.select('man-2');scene.step(.06);drawLevelMap(ctx,scene.snapshot(1440,650));assert.deepEqual(positions(arcs.splice(0)),positions(fixed));
   drawLevelMap(ctx,a,{reduced:true});const still=arcs.splice(0);drawLevelMap(ctx,b,{reduced:true});assert.deepEqual(arcs.splice(0),still);
   for(const [index,link]of a.links.entries()){
-    const from=a.anchors.find(n=>n.id===link.from),to=a.anchors.find(n=>n.id===link.to),curve=levelLinkCurve(from,to,index,a.height);
+    const from=a.anchors.find(n=>n.id===link.from),to=a.anchors.find(n=>n.id===link.to),curve=levelLinkCurve(from,to);
     for(const [centre,end,control]of [[from,curve.start,curve.c1],[to,curve.end,curve.c2]]){
       const x=end.x-centre.x,y=end.y-centre.y,cx=control.x-centre.x,cy=control.y-centre.y;
       assert.ok(Math.abs(x*cy-y*cx)<1e-7,'endpoint tangent aligns with the button centre');assert.ok(x*cx+y*cy>0);
+    }
+    if(index<a.links.length-1){
+      const next=a.anchors.find(n=>n.id===a.links[index+1].to),following=levelLinkCurve(to,next);
+      const ax=curve.end.x-curve.c2.x,ay=curve.end.y-curve.c2.y,bx=following.c1.x-following.start.x,by=following.c1.y-following.start.y;
+      assert.ok(Math.abs(ax*by-ay*bx)<1e-7,'adjacent segments share a tangent through the hidden centre');assert.ok(ax*bx+ay*by>0);
     }
   }
   assert.equal(b.drift.x,14);assert.equal(b.drift.y,-9);
