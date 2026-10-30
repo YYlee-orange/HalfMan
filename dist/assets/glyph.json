@@ -1,0 +1,56 @@
+{
+  "character": "曼",
+  "fontFamily": "Microsoft YaHei",
+  "fontStyle": "Regular",
+  "fontSource": "C:/Windows/Fonts/msyh.ttc#fontNumber=0",
+  "fontSha256": "d79c55e68b1131eea0cc1c47be4f572d964f28c682e143db2ad09c1e4cb07a3f",
+  "glyphName": "uni66FC",
+  "unitsPerEm": 2048,
+  "width": 1908,
+  "height": 1914,
+  "path": "M258 0H1644V634H1508V582H394V634H258ZM72 694H1830V1180H1698V1132H204V1180H72ZM152 1362V1250H1654V1364Q1454 1526 1160 1646Q1482 1727 1908 1756Q1866 1820 1824 1900Q1315 1838 961 1719Q580 1845 68 1914Q40 1850 0 1784Q428 1739 766 1645Q492 1526 339 1362ZM394 470H1508V342H394ZM1508 112H394V238H1508ZM1430 1362H515Q691 1496 956 1587Q1226 1493 1430 1362ZM1698 806H1284V1020H1698ZM744 1020H1156V806H744ZM204 1020H616V806H204Z",
+  "splitX": 954.0,
+  "halves": [
+    {
+      "side": "left",
+      "clip": [
+        0,
+        0,
+        954.0,
+        1914
+      ],
+      "pivot": [
+        477.0,
+        957.0
+      ],
+      "rotation": -1.5707963267948966,
+      "bbox": [
+        -957.0,
+        -477.0,
+        1914,
+        954.0
+      ]
+    },
+    {
+      "side": "right",
+      "clip": [
+        954.0,
+        0,
+        954.0,
+        1914
+      ],
+      "pivot": [
+        1431.0,
+        957.0
+      ],
+      "rotation": -1.5707963267948966,
+      "bbox": [
+        -957.0,
+        -477.0,
+        1914,
+        954.0
+      ]
+    }
+  ],
+  "coordinates": "top-left origin, y down; radians positive clockwise; bbox is relative to rotated pivot"
+}

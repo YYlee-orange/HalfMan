@@ -1,0 +1,12 @@
+{
+  "name": "man-glyph-game",
+  "version": "0.27.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "precheck": "node --check dist/cannon.js && node --check dist/cannon-art.js && node --check dist/cannon-ui.js && node --check dist/shield.js && node --check dist/shield-art.js && node --check dist/shield-control.js && node --check dist/level-select.js && node --check dist/chapter-guidance.js && node --check dist/mechanism-guidance.js && node --check dist/round-ending.js && node --check dist/farm.js && node --check dist/farm-art.js && node --check dist/farm-rowing.js && node --check dist/farm-physics.js && node --check dist/farm-feedback.js && node --check dist/farm-guidance.js && node --check dist/farm-guidance-layout.js && node --check dist/level-rules.js && node --check dist/volcano.js && node --check dist/volcano-physics.js && node --check dist/volcano-fx.js && node --check dist/nuclear.js && node --check dist/nuclear-settings.js && node --check dist/nuclear-art.js && node --check dist/nuclear-guidance.js && node --check dist/nuclear-hud.js && node --check dist/radiation.js && node --check dist/level-drag.js",
+    "start": "node tools/serve.mjs",
+    "check": "node --check dist/tutorial-feedback.js && node --check dist/scene-transition.js && node --check dist/score-rules.js && node --check dist/score-feedback.js && node --check dist/score-hud.js && node --check dist/progression.js && node --check dist/engine.js && node --check dist/game.js && node --check dist/opening-scene.js && node --check dist/food-mark.js && node --check dist/background.js && node --check dist/pencil-hint.js && node --check dist/cut-hint.js && node --check dist/bomb-settings.js && node --check dist/bomb-physics.js && node --check dist/bomb-fx.js && node --check dist/bomb-metrics.js && node --check dist/effects.js && node --check dist/variants.js && node --check dist/radar.js && node --check dist/facilities.js && node --check dist/movement.js && node --check dist/glyph-metrics.js && node --check dist/body-geometry.js && node --check dist/fire.js && node --check dist/flames.js && node --check dist/fx-physics.js && node --check dist/cut-motion.js && node --check dist/cut-feedback.js && node --check dist/cut-settings.js && node --check dist/cut-tuner.js && node --check dist/preview/model.js && node --check dist/preview/preview.js",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark"><title>雷达护盾 · 美术预览</title><link rel="icon" href="../assets/glyph.svg"><link rel="stylesheet" href="shield-preview.css"><link rel="stylesheet" href="../shield-control.css"></head>
+<body>
+<main>
+  <header><div><h1>雷达护盾</h1><p>美术与动效预览</p></div><nav><button id="theme">切换深色</button><a href="../">返回游戏</a></nav></header>
+  <section class="stage" aria-label="雷达护盾独立美术演示">
+    <canvas id="shield-scene" aria-hidden="true"></canvas>
+    <div id="shield-control" class="shield-control" data-state="ready">
+      <span class="control-name">雷达护盾</span>
+      <button id="shield-toggle" class="energy-toggle" aria-label="护盾就绪，点击预览开启" aria-pressed="false" aria-disabled="false"><span class="toggle-track" aria-hidden="true"><canvas id="status-icon" class="state-symbol symbol-ready" aria-hidden="true"></canvas></span><span class="toggle-thumb" aria-hidden="true"></span></button>
+    </div>
+    <p id="phase" class="phase" role="status">护盾就绪</p>
+  </section>
+  <section class="preview-controls" aria-label="美术预览控制">
+    <div class="inspect"><span>查看状态</span><button data-view="ready" aria-pressed="true">就绪</button><button data-view="active" aria-pressed="false">开启中</button><button data-view="cooldown" aria-pressed="false">冷却中</button><button id="play-cycle">播放完整一轮</button><button id="pause" disabled>暂停</button></div>
+    <label class="timeline">演示进度<input id="position" type="range" min="0" max="19.45" step="0.01" value="19.45"><output id="clock">就绪</output></label>
+    <p class="note">此页独立演示外观，第二关已接入护盾机制。开启 4 秒后面片错峰渐隐，随后冷却 15 秒；可拖动进度查看展开、闪动、渐隐和圆环变勾。</p>
+  </section>
+</main>
+<script type="module" src="shield-preview.js"></script>
+</body></html>

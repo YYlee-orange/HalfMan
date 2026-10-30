@@ -1,0 +1,19 @@
+.score-panel{position:absolute;right:32px;top:14%;width:300px;pointer-events:none;text-align:right;--score-gain:#287344;--score-heavy:#236b9b;--score-accent:var(--ink)}
+:root[data-theme=dark] .score-panel{--score-gain:#75d894;--score-heavy:#a8deff}
+.score-panel[data-tone=gain],.score-source[data-tone=gain]{--score-accent:var(--score-gain)}
+.score-panel[data-tone=heavy],.score-source[data-tone=heavy]{--score-accent:var(--score-heavy)}
+.score-panel>.metric-label{font-size:12px;margin-bottom:6px;letter-spacing:1px}
+.score-motion{transform-origin:right center;--score-flash:0%;color:var(--ink);color:color-mix(in srgb,var(--score-accent) var(--score-flash),var(--ink));font-family:'Man Numbers',monospace;font-size:64px;line-height:1;will-change:transform}
+.score-panel[data-digits=long] .score-motion{font-size:48px}
+.score-digits{display:flex;flex-direction:row-reverse;justify-content:flex-start;align-items:center;font-variant-numeric:tabular-nums}
+.score-digit{position:relative;width:.61em;height:1em;overflow:hidden;flex:0 0 .61em;mask-image:linear-gradient(transparent,#000 9%,#000 91%,transparent)}
+.score-digit-track{display:block;line-height:1em}.score-digit-track>span{display:block;height:1em;text-align:center}
+.score-sources{display:flex;flex-direction:column;gap:10px;margin-top:15px;min-height:90px}
+.score-source{min-height:40px;line-height:1.25;transform-origin:right center;--score-accent:var(--ink)}
+.score-source-line{display:flex;align-items:baseline;justify-content:flex-end;gap:13px}
+.score-source-amount{display:inline-block;color:var(--score-accent);font-family:'Man Numbers',monospace;font-size:26px;font-weight:400;white-space:nowrap;transform-origin:right center}
+.score-source-label{font-size:14px;color:var(--ink);max-width:180px;line-height:1.35}
+.score-source-detail{font-size:11px;line-height:1.45;color:var(--muted);margin-top:4px;min-height:0}
+.score-compact>.metric-label{font-size:10px}.score-compact .score-motion{font-size:42px}.score-compact[data-digits=long] .score-motion{font-size:34px}
+.score-compact .score-sources{margin-top:11px;gap:8px}.score-compact .score-source{min-height:34px}.score-compact .score-source-amount{font-size:21px}.score-compact .score-source-label{font-size:12px;max-width:140px}.score-compact .score-source-detail{font-size:10px}
+@media(prefers-reduced-motion:reduce){.score-motion{will-change:auto}}

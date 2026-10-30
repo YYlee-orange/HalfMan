@@ -1,0 +1,8 @@
+.nuclear-countdown{position:absolute;left:50%;top:24px;transform:translateX(-50%) translateY(-16px) scale(.45);transform-origin:center top;pointer-events:none;text-align:center;opacity:0;transition:opacity .12s,transform .14s cubic-bezier(.4,0,.7,1);color:#cb303b}
+:root[data-theme=dark] .nuclear-countdown{color:#ff6862}
+.nuclear-countdown[data-active=true]{opacity:1;transform:translateX(-50%) translateY(0) scale(1);transition:opacity .2s,transform .32s cubic-bezier(.2,.9,.3,1.25)}
+.nuclear-clock-motion{font-family:'Man Numbers',monospace;font-size:58px;line-height:1;transform-origin:center;will-change:transform}
+.nuclear-clock-digits{display:flex;align-items:center;justify-content:center}.nuclear-clock-separator{width:.38em}
+.nuclear-layer{position:fixed;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;background:transparent;z-index:2;pointer-events:none}
+@media(max-width:700px),(max-height:520px){.nuclear-countdown{top:20px}.nuclear-clock-motion{font-size:42px}}
+@media(prefers-reduced-motion:reduce){.nuclear-countdown{transition:opacity .15s}.nuclear-clock-motion{will-change:auto}}

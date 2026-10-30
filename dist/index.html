@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="点按雷达，把曼切成两个人。三分钟的极简字形游戏。">
+  <meta name="theme-color" content="#f7f8f5">
+  <meta name="color-scheme" content="light dark">
+  <meta property="og:title" content="曼 Man">
+  <meta property="og:description" content="点按雷达，划动切开。让两半成为人力。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://man-glyph-playground.wiry-trout-0789.chatgpt.site">
+  <meta property="og:image" content="https://man-glyph-playground.wiry-trout-0789.chatgpt.site/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://man-glyph-playground.wiry-trout-0789.chatgpt.site/">
+  <link rel="icon" href="assets/glyph.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="cut-tuner.css">
+  <link rel="stylesheet" href="score-hud.css">
+  <link rel="stylesheet" href="nuclear.css">
+  <link rel="stylesheet" href="level-select.css">
+  <link rel="stylesheet" href="shield-control.css">
+  <link rel="stylesheet" href="cannon.css">
+  <link rel="stylesheet" href="popup-motion.css">
+  <title>曼 Man</title>
+</head>
+<body>
+  <main class="playfield" data-state="ready" data-scene="title" aria-label="曼 Man 游戏场景">
+    <canvas id="scene" tabindex="0" aria-label="点击红色雷达召唤；按住划动切开曼字。键盘空格召唤，方向键移动准星，Shift 切割。"></canvas>
+    <canvas id="opening-scene" class="opening-layer" aria-hidden="true"></canvas>
+    <canvas id="scene-transition" class="scene-transition-layer" aria-hidden="true" hidden></canvas>
+    <section id="level-select" class="level-select" aria-labelledby="level-heading" hidden>
+      <h2 id="level-heading">选择关卡</h2>
+      <div id="level-map" class="level-map" tabindex="0" aria-label="横向关卡路线，按住并左右拖动">
+        <div id="level-track" class="level-track">
+          <canvas id="level-map-canvas" aria-hidden="true"></canvas>
+          <div id="level-buttons"></div>
+        </div>
+      </div>
+    </section>
+    <div class="hud game-ui" aria-label="本局状态">
+      <div class="time-metric"><span class="metric-label">剩余时间</span><strong id="time">03:00</strong></div>
+      <div class="other-metrics"><div><span class="metric-label">切开</span><strong id="cuts">0</strong></div><div><span class="metric-label">存活</span><strong id="alive">0</strong></div></div>
+    </div>
+    <section id="score-panel" class="score-panel game-ui" aria-label="得分与分数来源">
+      <span class="metric-label">得分</span>
+      <div class="score-motion"><strong id="score" class="sr-only">0</strong><span class="score-digits" aria-hidden="true"></span></div>
+      <div class="score-sources"></div>
+      <div id="cannon-cooling-hud" class="cannon-cooling-hud" hidden>
+        <span id="cannon-heat" class="cannon-heat" role="progressbar" aria-label="防空炮过热值" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><canvas id="cannon-heat-canvas" aria-hidden="true"></canvas></span>
+        <span id="cannon-cooling-label" class="cannon-cooling-label">开炮冷却</span>
+      </div>
+    </section>
+    <button id="menu-button" class="menu-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="game-menu">菜单</button>
+    <section id="nuclear-countdown" class="nuclear-countdown game-ui" aria-label="核弹倒计时" hidden>
+      <strong class="nuclear-clock-value sr-only">0:45</strong>
+      <div class="nuclear-clock-motion" aria-hidden="true"><span class="nuclear-clock-digits"><span class="score-digit nuclear-clock-digit"><span class="score-digit-track"><span>0</span><span>0</span><span>0</span></span></span><span class="nuclear-clock-separator">:</span><span class="score-digit nuclear-clock-digit"><span class="score-digit-track"><span>0</span><span>0</span><span>0</span></span></span><span class="score-digit nuclear-clock-digit"><span class="score-digit-track"><span>0</span><span>0</span><span>0</span></span></span></span></div>
+    </section>
+    <canvas id="nuclear-layer" class="nuclear-layer" aria-hidden="true" hidden></canvas>
+    <button id="tuning-button" class="tuning-button game-ui" aria-expanded="false" aria-controls="cut-tuner">切割调参</button>
+    <div id="shelter-controls" class="shelter-controls game-ui">
+      <span id="shelter-count" class="facility-note">洞内 0 人</span>
+      <div class="button-pair"><button id="recall-button" disabled>进入</button><button id="release-button" disabled>出来</button></div>
+    </div>
+    <div id="radar-controls" class="radar-status game-ui" aria-label="雷达工作和召唤进度">
+      <span class="facility-note" id="work-count">工作 0 人</span>
+      <span class="charge-track" role="progressbar" aria-label="召唤进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="charge-fill"></span></span>
+    </div>
+    <div id="radar-shield" class="shield-control game-ui" hidden>
+      <span class="control-name">雷达护盾</span>
+      <button id="shield-button" class="energy-toggle" type="button" aria-label="护盾就绪" aria-pressed="false" aria-disabled="false"><span class="toggle-track" aria-hidden="true"><canvas class="state-symbol symbol-ready" aria-hidden="true"></canvas></span><span class="toggle-thumb" aria-hidden="true"></span></button>
+    </div>
+    <div id="cannon-controls" class="cannon-controls game-ui" hidden>
+      <span id="cannon-crew" class="cannon-crew"><span>炮位</span> <strong id="cannon-crew-count" class="cannon-crew-count">0 / 6</strong><span id="cannon-crew-status" class="cannon-crew-status"></span></span>
+      <button id="cannon-toggle" class="cannon-toggle" aria-pressed="false" aria-label="射：征召小人并进入瞄准模式"><span class="cannon-track" aria-hidden="true"></span><span class="cannon-front" aria-hidden="true">射</span><span class="cannon-back" aria-hidden="true">退</span></button>
+    </div>
+    <div id="overlay" class="overlay">
+      <div id="results-backdrop" class="results-backdrop" aria-hidden="true" hidden></div>
+      <section class="intro" id="intro">
+        <p class="intro-kicker">三分钟的字形小游戏</p>
+        <h1>把「曼」切开。</h1>
+        <p>直接点按红色雷达召唤陨石。<br>划动切开，让两半成为人力。</p>
+        <button id="start-button" class="primary" disabled>正在准备字形</button>
+        <p id="loading-status" class="loading-status" role="status">读取字形资源</p>
+      </section>
+      <section class="results" id="results" hidden>
+        <p class="intro-kicker">时间到</p><h2>这一局，留下了多少人？</h2>
+        <div class="result-total" id="final-score">0</div>
+        <div class="result-breakdown"><p><span>切开陨石</span><strong id="final-cuts">0 × 100</strong></p><p><span>存活小人</span><strong id="final-alive">0 × 5</strong></p><p id="cannon-result" hidden><span>防空炮击落</span><strong id="final-cannon">0</strong></p><p id="farm-result" hidden><span>农场收成</span><strong id="final-farm">0</strong></p><p><span>炸弹扣分</span><strong id="final-penalty">0</strong></p><p><span>本机最佳</span><strong id="best-score">0</strong></p></div>
+        <button id="results-levels-button" class="primary">返回选关</button>
+      </section>
+    </div>
+    <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
+  </main>
+  <dialog id="game-menu" aria-labelledby="menu-title">
+    <div class="menu-heading"><h2 id="menu-title">菜单</h2><button id="menu-close" class="text-button" aria-label="关闭菜单">关闭</button></div>
+    <button id="pause-button" class="primary" hidden disabled>继续游戏</button>
+    <div class="menu-options"><button id="theme-toggle">切换深色</button></div>
+    <button id="menu-restart-button" class="menu-return" hidden disabled>重新开始</button>
+    <button id="return-start-button" class="menu-return" hidden disabled>返回开始界面</button>
+    <button id="return-levels-button" class="menu-return" hidden disabled>返回选关</button>
+    <details id="help"><summary>怎么玩</summary><p>直接点按红色雷达蓄力。按住鼠标或触屏，任意方向划中空中的「曼」。</p><p>小人会分散到雷达或其脚下工作，饿了前往饭桶或桶边吃饭。点击“进入”：非工作者立即出发，工作者每隔 1 秒离岗；防空洞人数不限。</p><p>避开高对比度的“慢！”炸弹：划中会扣分并放出六颗子母弹，飞行接触和落地爆炸都可杀死小人。</p><p>第二至四关可拨动雷达护盾，开启后持续 4 秒，随后冷却 15 秒。护盾拦截接触球面的陨石和子母弹，罩内小人在开启期间免受它们的伤害。</p><p>第二至四关的防空炮位于防空洞与饭桶之间。点击“射”进入瞄准，持续招满 6 名非雷达工作者，按住画面开火，无人时也可低速射击；过热后自动冷却。点击“退”恢复普通操作。瞄准期间炮内人员不消耗饥饿；退出后留岗，按雷达工作速度扣饥饿，饿了再去吃饭。炮内人员始终免受陨石伤害；普通曼击落 +75，慢字号击落 +50，均不产生新 man。瞄准时也可用方向键移动、按住空格开火。</p><p>第三、四关中，让下落的小人落在空中农场。最多 9 人，农民会恢复饥饿并定期产出收成，不响应召回或炮塔征召；满员后多余的小人会走下船。农场上的小人仍会受到陨石伤害。</p><p>当前规则：切开陨石 +100 分，每位现存小人计入 5 分；新生、死亡时会同步变分。右上显示总分及变化来源。陨石坠落途中和撞地时都会砸死小人，洞内受到保护。</p><p>切换标签页暂停。键盘：空格召唤；方向键移动准星，Shift 切割；P 暂停，Esc 关闭菜单。</p></details>
+  </dialog>
+  <aside id="cut-tuner" class="cut-tuner" role="dialog" aria-modal="false" aria-labelledby="tuner-title" hidden>
+    <header id="tuner-drag" class="tuner-heading"><div><h2 id="tuner-title">切割调参</h2><span>临时编辑窗口 · 拖动标题移动</span></div><div><button id="tuner-collapse" aria-expanded="true">收起</button><button id="tuner-close" aria-label="关闭调参窗口">关闭</button></div></header>
+    <div id="tuner-body">
+      <p class="tuner-note">试调自动记住；点击“保存参数”保留一份可随时读取的配置。蓄爆与飞散初值用于下一次触发，重力实时生效。px 以 1440 × 810 场景计；D 表示字形大小。</p>
+      <p id="tuner-motion-note" class="tuner-note" hidden>当前已减弱动态，旋转和镜头反馈会受限。<button id="tuner-full-motion">开启完整动态</button></p>
+      <div class="tuner-presets"><button id="tuner-strong">恢复默认参数</button><button id="tuner-baseline">上一版参数</button></div>
+      <div id="tuner-fields" class="tuner-fields"></div>
+      <footer class="tuner-footer"><div><button id="tuner-save">保存参数</button><button id="tuner-load" disabled>读取已保存参数</button></div><div><button id="tuner-summon">召唤一颗陨石</button><button id="tuner-bomb">召唤慢！</button><button id="tuner-nuclear">发射核弹 / 刷新预警</button><button id="tuner-copy">复制参数</button></div><p id="tuner-status" role="status">参数保存在当前浏览器；试调不会覆盖手动保存的配置。</p><textarea id="tuner-export" aria-label="导出的切割参数" readonly hidden></textarea></footer>
+    </div>
+  </aside>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "font": "Microsoft YaHei Regular",
+  "size": [
+    1908,
+    1914
+  ],
+  "splitX": 954.0,
+  "rotationDegrees": {
+    "left": -90.0,
+    "right": -90.0
+  },
+  "reconstructionDifferingPixels": 0,
+  "qaRasterSize": [
+    3816,
+    3828
+  ],
+  "geometryProof": "[0, splitX] union [splitX, width] covers the same one outline; interiors disjoint; inverse 90-degree rotation restores each clipped half without changing strokes."
+}
