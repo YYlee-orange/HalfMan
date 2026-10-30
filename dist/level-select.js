@@ -25,13 +25,15 @@ const clamp=n=>Math.max(0,Math.min(1,n)),smooth=n=>{const t=clamp(n);return t*t*
 const routeDots={radius:4.2,spacing:42,color:'#5b625e'};
 const gapWeight=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return .82+(n-Math.floor(n))*.48;};
 export function levelMapLayout(width,height){
-  const trackWidth=Math.max(LEVELS.length*250,width),radius=Math.max(39,Math.min(76,height*.19,trackWidth*.069));
-  const edge=Math.max(110,radius*1.05+36),weights=LEVELS.slice(1).map((_,i)=>gapWeight(i)),total=weights.reduce((a,b)=>a+b,0);
+  const radius=Math.max(39,Math.min(76,height*.19)),edge=Math.max(110,radius*1.05+36);
+  const gap=Math.max(360,width*.38),weights=LEVELS.slice(1).map((_,i)=>gapWeight(i)),total=weights.reduce((a,b)=>a+b,0);
+  const trackWidth=edge*2+gap*total;
   let offset=0;
   return{width:trackWidth,height,radius,nodes:LEVELS.map((level,i)=>{
     if(i)offset+=weights[i-1];
-    const r=radius*LEVEL_ART[level.id].size,y=Math.max(r+8,Math.min(height-r-68,height*[.52,.32,.62,.40][i%4]));
-    return{...level,x:edge+(trackWidth-edge*2)*offset/total,y,labelY:y+r+18,radius:r};
+    const r=radius*LEVEL_ART[level.id].size,top=r+12,bottom=Math.max(top,height-r-74);
+    const y=top+(bottom-top)*[.58,.05,.94,.28,.78,.12][i%6];
+    return{...level,x:edge+gap*offset,y,labelY:y+r+18,radius:r};
   })};
 }
 export function levelJelly(age,reduced=false){
@@ -59,7 +61,7 @@ export class LevelSelectScene{
         flame:reduced?Number(selected):smooth(state.flame),
         fragments:Array.from({length:7},(_,j)=>({dy:reduced?0:(2.2+j*.24)*Math.sin(this.time*(.82+j*.11)+j*1.7),phase:j*1.7}))};
     });
-    return{...layout,time:this.time,paused:this.paused,selected:this.selected,nodes,
+    return{...layout,anchors:layout.nodes,time:this.time,paused:this.paused,selected:this.selected,nodes,
       drift:reduced?{x:0,y:0}:{x:this.time*LEVEL_MOTION.driftX,y:this.time*LEVEL_MOTION.driftY},
       links:nodes.slice(1).flatMap((n,i)=>n.unlocked&&nodes[i].unlocked?[{from:nodes[i].id,to:n.id}]:[])};
   }
@@ -111,20 +113,24 @@ export function drawLevelFlames(ctx,frame,{reduced=false,x=0,y=0}={}){
 export function drawLevelMap(ctx,frame,{dark=false}={}){
   ctx.clearRect(0,0,frame.width,frame.height);
   ctx.save();ctx.fillStyle=routeDots.color;
-  for(const link of frame.links){
-    const a=frame.nodes.find(n=>n.id===link.from),b=frame.nodes.find(n=>n.id===link.to);
-    const start={x:a.x+a.radius+20,y:a.y+10},end={x:b.x-b.radius-20,y:b.y+14};
-    const handle=(end.x-start.x)*.30,samples=[{...start,length:0}];
+  for(const [index,link]of frame.links.entries()){
+    // Route anchors belong to the map, independently of rock float and jelly.
+    const a=frame.anchors.find(n=>n.id===link.from),b=frame.anchors.find(n=>n.id===link.to);
+    const start={x:a.x+a.radius+24,y:a.y},end={x:b.x-b.radius-24,y:b.y};
+    const dx=end.x-start.x,dy=end.y-start.y,length=Math.hypot(dx,dy),bend=Math.min(108,frame.height*.16,length*.26)*(index%2?-1:1);
+    const nx=-dy/(length||1),ny=dx/(length||1);
+    const c1={x:start.x+dx/3+nx*bend,y:start.y+dy/3+ny*bend},c2={x:start.x+dx*2/3+nx*bend,y:start.y+dy*2/3+ny*bend};
+    const samples=[{...start,length:0}];
     // Equal curve parameters bunch up at the ends. Sample arc length instead.
     for(let i=1;i<=80;i++){
-      const t=i/80,u=1-t,x=u*u*u*start.x+3*u*u*t*(start.x+handle)+3*u*t*t*(end.x-handle)+t*t*t*end.x;
-      const y=u*u*u*start.y+3*u*u*t*(start.y+38)+3*u*t*t*(end.y+48)+t*t*t*end.y,previous=samples.at(-1);
+      const t=i/80,u=1-t,x=u*u*u*start.x+3*u*u*t*c1.x+3*u*t*t*c2.x+t*t*t*end.x;
+      const y=u*u*u*start.y+3*u*u*t*c1.y+3*u*t*t*c2.y+t*t*t*end.y,previous=samples.at(-1);
       samples.push({x,y,length:previous.length+Math.hypot(x-previous.x,y-previous.y)});
     }
-    const length=samples.at(-1).length,count=Math.max(2,Math.floor(length/routeDots.spacing));
+    const arcLength=samples.at(-1).length,count=Math.max(2,Math.floor(arcLength/routeDots.spacing));
     let segment=1;
     for(let i=0;i<count;i++){
-      const distance=(i+.5)*length/count;
+      const distance=(i+.5)*arcLength/count;
       while(segment<samples.length-1&&samples[segment].length<distance)segment++;
       const p=samples[segment-1],q=samples[segment],t=(distance-p.length)/(q.length-p.length||1);
       ctx.beginPath();ctx.arc(p.x+(q.x-p.x)*t,p.y+(q.y-p.y)*t,routeDots.radius,0,Math.PI*2);ctx.fill();
