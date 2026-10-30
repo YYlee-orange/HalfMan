@@ -25,6 +25,28 @@ const clamp=n=>Math.max(0,Math.min(1,n)),smooth=n=>{const t=clamp(n);return t*t*
 const routeDots={minRadius:5,maxRadius:9.4,spacing:[82,62,96,70],color:'#b9c0bb',breath:.035};
 const seeded=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return n-Math.floor(n);};
 const gapWeight=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return .82+(n-Math.floor(n))*.48;};
+function curvePoint({start,end,c1,c2},t){
+  const u=1-t;
+  return{x:u*u*u*start.x+3*u*u*t*c1.x+3*u*t*t*c2.x+t*t*t*end.x,y:u*u*u*start.y+3*u*u*t*c1.y+3*u*t*t*c2.y+t*t*t*end.y};
+}
+function makeDebris(layout){
+  if(layout.height<100)return[];
+  const count=Math.max(10,Math.min(30,Math.round(layout.width*layout.height/90000))),pieces=[],route=[];
+  for(let i=1;i<layout.nodes.length;i++)if(layout.nodes[i-1].unlocked&&layout.nodes[i].unlocked){
+    const curve=levelLinkCurve(layout.nodes[i-1],layout.nodes[i]);
+    for(let j=0;j<=24;j++)route.push(curvePoint(curve,j/24));
+  }
+  for(let attempt=0;attempt<count*40&&pieces.length<count;attempt++){
+    const seed=attempt*17+503,shape=Math.floor(seeded(seed+1)*LOCKED_FRAGMENTS.length),scale=36+seeded(seed+2)*Math.min(94,layout.height*.24);
+    const bound=Math.max(...LOCKED_FRAGMENTS[shape].points.map(([x,y])=>Math.hypot(x,y)))*scale,margin=bound+16;
+    if(layout.height<margin*2)continue;
+    const x=margin+seeded(seed+3)*(layout.width-margin*2),y=margin+seeded(seed+4)*(layout.height-margin*2);
+    if(layout.nodes.some(n=>Math.hypot(x-n.x,y-n.y)<n.radius*1.15+bound+30||Math.abs(x-n.x)<100+bound&&y>n.labelY-bound-14&&y<n.labelY+34+bound))continue;
+    if(route.some(p=>Math.hypot(x-p.x,y-p.y)<bound+24)||pieces.some(p=>Math.hypot(x-p.x,y-p.y)<bound+p.bound+32))continue;
+    pieces.push({shape,scale,bound,x,y,angle:seeded(seed+5)*Math.PI*2,phase:seeded(seed+6)*Math.PI*2,period:6.5+seeded(seed+7)*4.5,lift:2+seeded(seed+8)*4,opacity:.52+seeded(seed+9)*.24});
+  }
+  return pieces;
+}
 export function levelMapLayout(width,height){
   const radius=Math.max(39,Math.min(76,height*.19)),edge=Math.max(110,radius*1.05+36);
   const gap=Math.max(280,width*.29),weights=LEVELS.slice(1).map((_,i)=>gapWeight(i)),total=weights.reduce((a,b)=>a+b,0);
@@ -50,7 +72,7 @@ export function levelJelly(age,reduced=false){
 }
 export class LevelSelectScene{
   constructor(){this.reset();}
-  reset(){this.time=0;this.selected=null;this.paused=false;this.nodes=LEVELS.map(level=>({...level,angle:0,speed:LEVEL_MOTION.idleSpin,flame:0,pickedAt:-10}));}
+  reset(){this.time=0;this.selected=null;this.paused=false;this.debrisKey='';this.debrisBase=[];this.nodes=LEVELS.map(level=>({...level,angle:0,speed:LEVEL_MOTION.idleSpin,flame:0,pickedAt:-10}));}
   select(id){const node=this.nodes.find(n=>n.id===id);if(!node?.unlocked||this.paused)return false;this.selected=id;node.pickedAt=this.time;return true;}
   step(dt,reduced=false){
     if(this.paused||!Number.isFinite(dt)||dt<=0)return;
@@ -63,13 +85,20 @@ export class LevelSelectScene{
   }
   snapshot(width,height,reduced=false){
     const layout=levelMapLayout(width,height);
+    const debrisKey=`${layout.width}/${height}`;
+    if(debrisKey!==this.debrisKey){this.debrisKey=debrisKey;this.debrisBase=makeDebris(layout);}
+    const debris=this.debrisBase.map(p=>{
+      const age=this.time*Math.PI*2/p.period,phase=p.phase;
+      return{...p,x:p.x+(reduced?0:1.8*Math.sin(age*.73+phase)),y:p.y+(reduced?0:p.lift*Math.sin(age+phase)),
+        angle:p.angle+(reduced?0:.045*Math.sin(age*.6+phase+1)),scale:p.scale*(1+(reduced?0:.025*Math.sin(age*.83+phase*1.7)))};
+    });
     const nodes=layout.nodes.map((n,i)=>{const state=this.nodes[i],selected=n.id===this.selected;
       return{...n,...levelJelly(this.time-state.pickedAt,reduced),selected,angle:reduced?0:state.angle,
         y:n.y+(reduced?0:4*Math.sin(this.time*(.90+i*.13)+i*1.8)),
         flame:reduced?Number(selected):smooth(state.flame),
         fragments:Array.from({length:7},(_,j)=>({dy:reduced?0:(2.2+j*.24)*Math.sin(this.time*(.82+j*.11)+j*1.7),phase:j*1.7}))};
     });
-    return{...layout,anchors:layout.nodes,time:this.time,paused:this.paused,selected:this.selected,nodes,
+    return{...layout,anchors:layout.nodes,debris,time:this.time,paused:this.paused,selected:this.selected,nodes,
       drift:reduced?{x:0,y:0}:{x:this.time*LEVEL_MOTION.driftX,y:this.time*LEVEL_MOTION.driftY},
       links:nodes.slice(1).flatMap((n,i)=>n.unlocked&&nodes[i].unlocked?[{from:nodes[i].id,to:n.id}]:[])};
   }
@@ -96,13 +125,25 @@ function paintRock(ctx,radius,colors,art){
   }
   ctx.restore();
 }
+function paintFragment(ctx,points,r,colors){
+  ctx.beginPath();points.forEach(([x,y],j)=>j?ctx.lineTo(x*r,y*r):ctx.moveTo(x*r,y*r));
+  ctx.closePath();ctx.fillStyle=colors[0];ctx.fill();ctx.clip();ctx.fillStyle=colors[1];ctx.fillRect(-r,.04*r,r*2,r);
+}
 function paintFragments(ctx,node,colors){
   const r=node.radius;
   for(const [i,piece]of LOCKED_FRAGMENTS.entries()){
     ctx.save();ctx.translate(piece.x*r,piece.y*r+node.fragments[i].dy);ctx.rotate(piece.angle);
-    ctx.beginPath();piece.points.forEach(([x,y],j)=>j?ctx.lineTo(x*r,y*r):ctx.moveTo(x*r,y*r));
-    ctx.closePath();ctx.fillStyle=colors[0];ctx.fill();ctx.clip();ctx.fillStyle=colors[1];ctx.fillRect(-r,.04*r,r*2,r);ctx.restore();
+    paintFragment(ctx,piece.points,r,colors);ctx.restore();
   }
+}
+export function drawLevelDebris(ctx,frame,{dark=false,x=0,y=0}={}){
+  const colors=LEVEL_ART[LEVELS.at(-1).id][dark?'dark':'light'];
+  ctx.save();ctx.translate(x,y);
+  for(const piece of frame.debris){
+    ctx.save();ctx.globalAlpha=piece.opacity;ctx.translate(piece.x,piece.y);ctx.rotate(piece.angle);
+    paintFragment(ctx,LOCKED_FRAGMENTS[piece.shape].points,piece.scale,colors);ctx.restore();
+  }
+  ctx.restore();
 }
 export function levelFlame(node,time,reduced=false){
   const grow=node.flame;if(grow<=0)return null;
@@ -137,8 +178,7 @@ export function drawLevelMap(ctx,frame,{dark=false,reduced=false}={}){
     const samples=[{...start,length:0}];
     // Equal curve parameters bunch up at the ends. Sample arc length instead.
     for(let i=1;i<=80;i++){
-      const t=i/80,u=1-t,x=u*u*u*start.x+3*u*u*t*c1.x+3*u*t*t*c2.x+t*t*t*end.x;
-      const y=u*u*u*start.y+3*u*u*t*c1.y+3*u*t*t*c2.y+t*t*t*end.y,previous=samples.at(-1);
+      const {x,y}=curvePoint({start,end,c1,c2},i/80),previous=samples.at(-1);
       samples.push({x,y,length:previous.length+Math.hypot(x-previous.x,y-previous.y)});
     }
     const spacing=routeDots.spacing[index%routeDots.spacing.length],arcLength=samples.at(-1).length,count=Math.max(2,Math.floor(arcLength/spacing));

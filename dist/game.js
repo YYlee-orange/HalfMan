@@ -2,7 +2,7 @@ import { GameModel, CONFIG, meteorFallTime } from './engine.js';
 import {BackgroundSky,drawBackground} from './background.js';
 import {OpeningScene,OpeningRenderer} from './opening-scene.js';
 import {SceneTransition,SceneTransitionRenderer} from './scene-transition.js';
-import {LEVELS,LevelSelectScene,drawLevelMap,drawLevelFlames} from './level-select.js';
+import {LEVELS,LevelSelectScene,drawLevelMap,drawLevelFlames,drawLevelDebris} from './level-select.js';
 import {installLevelDrag} from './level-drag.js';
 import {drawRiceMark} from './food-mark.js';
 import {PencilHint,PencilHintRenderer,pencilHintLayout} from './pencil-hint.js';
@@ -332,6 +332,7 @@ function renderOpening(){
 function renderLevelSelect(){
   const map=$('level-map'),w=map.clientWidth,h=Math.max(1,map.clientHeight),frame=levelScene.snapshot(w,h,reduced),target=$('level-map-canvas');
   drawBackground(ctx,levelSky,{width,height,dark,reduced,drift:frame.drift});
+  drawLevelDebris(ctx,frame,{dark,x:-map.scrollLeft,y:map.offsetTop});
   drawLevelFlames(ctx,frame,{reduced,x:-map.scrollLeft,y:map.offsetTop});
   if(target.width!==Math.round(frame.width*dpr)||target.height!==Math.round(h*dpr)){
     target.width=Math.round(frame.width*dpr);target.height=Math.round(h*dpr);
