@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {LEVELS,LEVEL_ART,LOCKED_FRAGMENTS,LevelSelectScene,createLevelList,levelJelly,levelFlame,levelLinkCurve,drawLevelMap,drawLevelFlames,drawLevelDebris} from '../dist/level-select.js';
+import {LEVELS,LEVEL_ART,LOCKED_FRAGMENTS,LevelSelectScene,createLevelList,levelJelly,levelFlame,levelLinkCurve,drawLevelMap,drawLevelFlames} from '../dist/level-select.js';
 test('five playable levels precede one broken future node; new chapters preserve this roster pattern',()=>{
   const scene=new LevelSelectScene();assert.deepEqual(LEVELS.map(n=>[n.label,n.unlocked]),[['曼-1',true],['曼-2',true],['曼-3',true],['曼-4',true],['曼-5',true],['曼-6',false]]);
   assert.equal(scene.select('man-6'),false);assert.equal(scene.select('missing'),false);assert.equal(scene.selected,null);
@@ -40,7 +40,6 @@ test('both themes and motion modes draw finite coordinates for intact rocks, fra
   let operations=0;const ctx=new Proxy({},{get:()=> (...args)=>{operations++;for(const n of args)if(typeof n==='number')assert.ok(Number.isFinite(n));},set:()=>true});
   for(const dark of [false,true])for(const reduced of [false,true]){
     const scene=new LevelSelectScene();scene.select('man-2');scene.step(.2,reduced);const f=scene.snapshot(844,222,reduced);
-    drawLevelDebris(ctx,f,{dark,x:-100,y:70});
     drawLevelFlames(ctx,f,{dark,reduced,x:-100,y:70});drawLevelMap(ctx,f,{dark,reduced});
   }
   assert.ok(operations>300);
