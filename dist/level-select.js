@@ -22,7 +22,8 @@ export const LOCKED_FRAGMENTS=Object.freeze([
   {x:.08,y:.83,angle:.62,points:[[-.10,-.10],[.15,-.04],[.04,.12]]},
 ]);
 const clamp=n=>Math.max(0,Math.min(1,n)),smooth=n=>{const t=clamp(n);return t*t*(3-2*t);};
-const routeDots={radius:4.2,spacing:42,color:'#5b625e'};
+const routeDots={minRadius:5,maxRadius:9.4,spacing:[82,62,96,70],color:'#b9c0bb',breath:.035};
+const seeded=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return n-Math.floor(n);};
 const gapWeight=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return .82+(n-Math.floor(n))*.48;};
 export function levelMapLayout(width,height){
   const radius=Math.max(39,Math.min(76,height*.19)),edge=Math.max(110,radius*1.05+36);
@@ -110,16 +111,23 @@ export function drawLevelFlames(ctx,frame,{reduced=false,x=0,y=0}={}){
   for(const node of frame.nodes){const plume=levelFlame(node,frame.time,reduced);if(plume)drawPlume(ctx,plume.trail,frame.time,(x,y)=>({x,y}),{character:1,reduced});}
   ctx.restore();
 }
-export function drawLevelMap(ctx,frame,{dark=false}={}){
+export function levelLinkCurve(a,b,index,height){
+  const dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy),nx=-dy/(length||1),ny=dx/(length||1);
+  const bend=Math.min(108,height*.16,length*.26)*(index%2?-1:1);
+  const c1={x:a.x+dx/3+nx*bend,y:a.y+dy/3+ny*bend},c2={x:a.x+dx*2/3+nx*bend,y:a.y+dy*2/3+ny*bend};
+  // Trim along each centre-to-control ray, preserving a radial endpoint tangent.
+  const da=Math.hypot(c1.x-a.x,c1.y-a.y)||1,db=Math.hypot(c2.x-b.x,c2.y-b.y)||1;
+  const start={x:a.x+(c1.x-a.x)*(a.radius+24)/da,y:a.y+(c1.y-a.y)*(a.radius+24)/da};
+  const end={x:b.x+(c2.x-b.x)*(b.radius+24)/db,y:b.y+(c2.y-b.y)*(b.radius+24)/db};
+  return{start,end,c1,c2};
+}
+export function drawLevelMap(ctx,frame,{dark=false,reduced=false}={}){
   ctx.clearRect(0,0,frame.width,frame.height);
   ctx.save();ctx.fillStyle=routeDots.color;
   for(const [index,link]of frame.links.entries()){
     // Route anchors belong to the map, independently of rock float and jelly.
     const a=frame.anchors.find(n=>n.id===link.from),b=frame.anchors.find(n=>n.id===link.to);
-    const start={x:a.x+a.radius+24,y:a.y},end={x:b.x-b.radius-24,y:b.y};
-    const dx=end.x-start.x,dy=end.y-start.y,length=Math.hypot(dx,dy),bend=Math.min(108,frame.height*.16,length*.26)*(index%2?-1:1);
-    const nx=-dy/(length||1),ny=dx/(length||1);
-    const c1={x:start.x+dx/3+nx*bend,y:start.y+dy/3+ny*bend},c2={x:start.x+dx*2/3+nx*bend,y:start.y+dy*2/3+ny*bend};
+    const {start,end,c1,c2}=levelLinkCurve(a,b,index,frame.height);
     const samples=[{...start,length:0}];
     // Equal curve parameters bunch up at the ends. Sample arc length instead.
     for(let i=1;i<=80;i++){
@@ -127,13 +135,16 @@ export function drawLevelMap(ctx,frame,{dark=false}={}){
       const y=u*u*u*start.y+3*u*u*t*c1.y+3*u*t*t*c2.y+t*t*t*end.y,previous=samples.at(-1);
       samples.push({x,y,length:previous.length+Math.hypot(x-previous.x,y-previous.y)});
     }
-    const arcLength=samples.at(-1).length,count=Math.max(2,Math.floor(arcLength/routeDots.spacing));
+    const spacing=routeDots.spacing[index%routeDots.spacing.length],arcLength=samples.at(-1).length,count=Math.max(2,Math.floor(arcLength/spacing));
     let segment=1;
     for(let i=0;i<count;i++){
       const distance=(i+.5)*arcLength/count;
       while(segment<samples.length-1&&samples[segment].length<distance)segment++;
       const p=samples[segment-1],q=samples[segment],t=(distance-p.length)/(q.length-p.length||1);
-      ctx.beginPath();ctx.arc(p.x+(q.x-p.x)*t,p.y+(q.y-p.y)*t,routeDots.radius,0,Math.PI*2);ctx.fill();
+      const seed=index*97+i*7,base=routeDots.minRadius+(routeDots.maxRadius-routeDots.minRadius)*seeded(seed+11);
+      const period=5.8+seeded(seed+31)*2.6,phase=seeded(seed+59)*Math.PI*2;
+      const radius=base*(1+(reduced?0:routeDots.breath*Math.sin(frame.time*Math.PI*2/period+phase)));
+      ctx.beginPath();ctx.arc(p.x+(q.x-p.x)*t,p.y+(q.y-p.y)*t,radius,0,Math.PI*2);ctx.fill();
     }
   }
   ctx.restore();
