@@ -22,11 +22,16 @@ export const LOCKED_FRAGMENTS=Object.freeze([
   {x:.08,y:.83,angle:.62,points:[[-.10,-.10],[.15,-.04],[.04,.12]]},
 ]);
 const clamp=n=>Math.max(0,Math.min(1,n)),smooth=n=>{const t=clamp(n);return t*t*(3-2*t);};
+const routeDots={radius:4.2,spacing:42,color:'#5b625e'};
+const gapWeight=i=>{const n=Math.sin((i+1)*12.9898)*43758.5453;return .82+(n-Math.floor(n))*.48;};
 export function levelMapLayout(width,height){
-  const trackWidth=Math.max(LEVELS.length*220,width),radius=Math.max(39,Math.min(76,height*.19,trackWidth*.069));
+  const trackWidth=Math.max(LEVELS.length*250,width),radius=Math.max(39,Math.min(76,height*.19,trackWidth*.069));
+  const edge=Math.max(110,radius*1.05+36),weights=LEVELS.slice(1).map((_,i)=>gapWeight(i)),total=weights.reduce((a,b)=>a+b,0);
+  let offset=0;
   return{width:trackWidth,height,radius,nodes:LEVELS.map((level,i)=>{
+    if(i)offset+=weights[i-1];
     const r=radius*LEVEL_ART[level.id].size,y=Math.max(r+8,Math.min(height-r-68,height*[.52,.32,.62,.40][i%4]));
-    return{...level,x:trackWidth*(i+.5)/LEVELS.length,y,labelY:y+r+18,radius:r};
+    return{...level,x:edge+(trackWidth-edge*2)*offset/total,y,labelY:y+r+18,radius:r};
   })};
 }
 export function levelJelly(age,reduced=false){
@@ -104,16 +109,25 @@ export function drawLevelFlames(ctx,frame,{reduced=false,x=0,y=0}={}){
   ctx.restore();
 }
 export function drawLevelMap(ctx,frame,{dark=false}={}){
-  const ink=dark?'#e5eae4':'#292d2b';
   ctx.clearRect(0,0,frame.width,frame.height);
-  ctx.save();ctx.fillStyle=ink;
+  ctx.save();ctx.fillStyle=routeDots.color;
   for(const link of frame.links){
     const a=frame.nodes.find(n=>n.id===link.from),b=frame.nodes.find(n=>n.id===link.to);
     const start={x:a.x+a.radius+20,y:a.y+10},end={x:b.x-b.radius-20,y:b.y+14};
-    for(let i=0;i<=7;i++){
-      const t=i/7,u=1-t,x=u*u*u*start.x+3*u*u*t*(start.x+35)+3*u*t*t*(end.x-35)+t*t*t*end.x;
-      const y=u*u*u*start.y+3*u*u*t*(start.y+38)+3*u*t*t*(end.y+48)+t*t*t*end.y;
-      ctx.beginPath();ctx.arc(x,y,3.3,0,Math.PI*2);ctx.fill();
+    const handle=(end.x-start.x)*.30,samples=[{...start,length:0}];
+    // Equal curve parameters bunch up at the ends. Sample arc length instead.
+    for(let i=1;i<=80;i++){
+      const t=i/80,u=1-t,x=u*u*u*start.x+3*u*u*t*(start.x+handle)+3*u*t*t*(end.x-handle)+t*t*t*end.x;
+      const y=u*u*u*start.y+3*u*u*t*(start.y+38)+3*u*t*t*(end.y+48)+t*t*t*end.y,previous=samples.at(-1);
+      samples.push({x,y,length:previous.length+Math.hypot(x-previous.x,y-previous.y)});
+    }
+    const length=samples.at(-1).length,count=Math.max(2,Math.floor(length/routeDots.spacing));
+    let segment=1;
+    for(let i=0;i<count;i++){
+      const distance=(i+.5)*length/count;
+      while(segment<samples.length-1&&samples[segment].length<distance)segment++;
+      const p=samples[segment-1],q=samples[segment],t=(distance-p.length)/(q.length-p.length||1);
+      ctx.beginPath();ctx.arc(p.x+(q.x-p.x)*t,p.y+(q.y-p.y)*t,routeDots.radius,0,Math.PI*2);ctx.fill();
     }
   }
   ctx.restore();

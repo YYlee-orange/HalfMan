@@ -43,13 +43,13 @@ test('both themes and motion modes draw finite coordinates for intact rocks, fra
   }
   assert.ok(operations>300);
 });
-test('caption anchors remain fixed, paths use eight larger dots, and unlocked rocks retain individual art',()=>{
+test('caption anchors remain fixed, paths use fewer larger dots, and unlocked rocks retain individual art',()=>{
   const scene=new LevelSelectScene(),a=scene.snapshot(1440,650);scene.step(.5);const b=scene.snapshot(1440,650);
   assert.equal(a.nodes[0].labelY,b.nodes[0].labelY);assert.notEqual(a.nodes[0].y,b.nodes[0].y);
   assert.notEqual(a.nodes[0].radius,a.nodes[1].radius);assert.notEqual(LEVEL_ART['man-1'].pattern,LEVEL_ART['man-2'].pattern);
   for(const theme of ['light','dark']){assert.equal(LEVEL_ART['man-1'][theme].length,2);assert.notDeepEqual(LEVEL_ART['man-1'][theme],LEVEL_ART['man-2'][theme]);}
   const arcs=[],ctx=new Proxy({arc(...args){arcs.push(args);}},{get:(target,key)=>key in target?target[key]:()=>{},set:()=>true});
-  drawLevelMap(ctx,a);assert.equal(arcs.length,a.links.length*8);assert.ok(arcs.every(p=>p[2]===3.3));
+  drawLevelMap(ctx,a);assert.ok(arcs.length>=a.links.length*2&&arcs.length<a.links.length*8);assert.ok(arcs.every(p=>p[2]===4.2));
   assert.equal(b.drift.x,14);assert.equal(b.drift.y,-9);
   const areas=LOCKED_FRAGMENTS.map(p=>Math.abs(p.points.reduce((n,[x,y],i)=>{const [nx,ny]=p.points[(i+1)%p.points.length];return n+x*ny-y*nx;},0))/2);
   assert.ok(Math.max(...areas)/Math.min(...areas)>5);assert.ok(new Set(LOCKED_FRAGMENTS.map(p=>p.points.length)).size>=3);
