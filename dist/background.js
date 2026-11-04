@@ -24,7 +24,7 @@ export class BackgroundSky{
     const r=this.random;
     this.stars=Array.from({length:140},()=>{
       const gray=120+Math.floor(r()*51),darkGray=gray-50;
-      return{x:.018+r()*.964,y:.025+r()*.825,radius:2.2+r()*1.8,alpha:.10+r()*.16,
+      return{x:.018+r()*.964,y:.025+r()*.825,radius:3.1+r()*2.5,alpha:.10+r()*.16,
         frequency:.7+r()*.6,phase:r()*Math.PI*2,cross:r()<.36,
         light:`rgb(${gray},${gray},${gray})`,dark:`rgb(${darkGray},${darkGray},${darkGray})`};
     });
@@ -33,7 +33,7 @@ export class BackgroundSky{
   makeShooting(born){
     const r=this.random,direction=r()<.5?-1:1,x=direction>0?.06+r()*.48:.46+r()*.48,y=.07+r()*.28;
     const dx=direction*(.18+r()*.24),dy=.10+r()*.18;
-    return{id:++this.total,born,duration:1.3+r(),tail:.24+r()*.18,radius:.8+r()*.55,
+    return{id:++this.total,born,duration:1.3+r(),tail:.34+r()*.24,radius:1.3+r()*.9,
       from:{x,y},control:{x:x+dx*.48,y:y-.04-r()*.07},to:{x:x+dx,y:y+dy}};
   }
   step(dt,reduced=false){
@@ -69,7 +69,7 @@ export function drawBackground(ctx,sky,{width,height,dark=false,reduced=false,em
     let previous=shootingPoint(s,start);
     for(let i=1;i<=18;i++){
       const t=i/18,p=shootingPoint(s,mix(start,u,t));
-      ctx.globalAlpha=clamp(.24*fade*t*t*emphasis,0,1);ctx.lineWidth=.15+s.radius*.8*t;
+      ctx.globalAlpha=clamp(.24*fade*t*t*emphasis,0,1);ctx.lineWidth=.25+s.radius*.9*t;
       ctx.beginPath();ctx.moveTo(previous.x*width,previous.y*height);ctx.lineTo(p.x*width,p.y*height);ctx.stroke();previous=p;
     }
     ctx.globalAlpha=clamp(.32*fade*emphasis,0,1);ctx.beginPath();ctx.arc(previous.x*width,previous.y*height,s.radius,0,Math.PI*2);ctx.fill();
