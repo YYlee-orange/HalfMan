@@ -1,8 +1,8 @@
 import {drawPlume} from './fire.js';
 import {AVAILABLE_LEVEL_COUNT} from './level-rules.js';
-// Increase the available count for each new chapter; one broken future node follows.
-export const createLevelList=count=>Object.freeze(Array.from({length:count+1},(_,i)=>Object.freeze({id:`man-${i+1}`,label:`曼-${i+1}`,unlocked:i<count})));
-export const LEVELS=createLevelList(AVAILABLE_LEVEL_COUNT);
+// Append one broken future node while more chapters are planned.
+export const createLevelList=(count,hasFuture=true)=>Object.freeze(Array.from({length:count+Number(hasFuture)},(_,i)=>Object.freeze({id:`man-${i+1}`,label:`曼-${i+1}`,unlocked:i<count})));
+export const LEVELS=createLevelList(AVAILABLE_LEVEL_COUNT,false);
 export const LEVEL_MOTION=Object.freeze({idleSpin:.105,selectedSpin:1.1,spinFollow:6,flameGrow:.65,flameFade:.24,jellyLife:.7,driftX:28,driftY:-18});
 const rockStyles=[
   {size:.94,pattern:'grooves',seed:.4,light:['#a6afa5','#69786b'],dark:['#bdc7bd','#7f9082']},
@@ -10,6 +10,7 @@ const rockStyles=[
   {size:.98,pattern:'bands',seed:2.9,light:['#b8ad91','#7d745c'],dark:['#cfc4a7','#998c6e']},
   {size:1.01,pattern:'pits',seed:4.2,light:['#aaa7a4','#6a6564'],dark:['#c4bcb7','#867c78']},
   {size:1.05,pattern:'bands',seed:5.6,light:['#aaa0b5','#6b5d7b'],dark:['#c8b8d5','#8c779e']},
+  {size:1.08,pattern:'grooves',seed:6.8,light:['#74828a','#39454d'],dark:['#a0acb3','#55626a']},
 ];
 export const LEVEL_ART=Object.freeze(Object.fromEntries(LEVELS.map((n,i)=>[n.id,n.unlocked?rockStyles[i%rockStyles.length]:{size:1,light:['#d7dcd6','#bdc7bf'],dark:['#4d5850','#39463d']}])));
 export const LOCKED_FRAGMENTS=Object.freeze([

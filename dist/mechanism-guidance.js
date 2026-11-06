@@ -3,6 +3,8 @@ import {CHAPTER_TWO,CHAPTER_LETTER_STROKES} from './chapter-guidance.js';
 
 // Pen centerlines rather than a browser font: letters can be written and rubbed out.
 const letters={...CHAPTER_LETTER_STROKES,
+  激:[[[8,19],[17,26]],[[3,44],[14,50]],[[14,67],[7,92]],[[35,8],[28,23]],[[26,26],[26,66]],[[27,27],[52,24],[53,62],[27,66]],[[29,43],[50,40]],[[22,77],[54,72]],[[39,66],[32,87],[20,98]],[[39,78],[50,88]],[[72,9],[62,32]],[[63,27],[96,22]],[[74,29],[76,58],[87,82],[99,95]],[[94,26],[87,58],[74,80],[56,97]]],
+  光:[[[48,8],[49,44]],[[16,16],[29,36]],[[82,13],[67,36]],[[8,48],[50,44],[94,40]],[[36,49],[31,72],[18,91],[5,98]],[[61,47],[61,82],[66,94],[86,93],[96,86],[97,75]]],
   '！':[[[52,11],[50,37],[48,67]],[[47,85],[48,90]]],
   我:[[[13,23],[32,18],[47,10]],[[8,43],[34,38],[57,33]],[[34,20],[35,62],[34,91],[23,86]],[[8,69],[34,55],[54,44]],[[60,7],[62,42],[70,73],[82,91],[94,74]],[[90,38],[79,61],[57,83]],[[76,11],[85,16],[90,23]]],
   们:[[[27,10],[18,34],[5,51]],[[19,30],[20,94]],[[46,10],[52,16],[56,23]],[[39,33],[40,91]],[[61,24],[89,20],[90,85],[82,95],[72,88]]],
@@ -38,6 +40,7 @@ export const MECHANISM_CUES=Object.freeze([
   Object.freeze({id:'sky-secure',text:'现在空中已不构成威胁',lines:['现在空中已','不构成威胁'],center:true}),
   Object.freeze({id:'advantage',text:'优势在我！',lines:['优势在我！'],center:true,emphasis:1.25}),
 ]);
+const laserCues=MECHANISM_CUES.map(c=>c.id==='cannon-intro'?{...c,text:'我们还安装了激光炮',lines:['我们还安装了','激光炮']}:c);
 export const MECHANISM_TIMING=Object.freeze({write:1.4,hold:1.7,erase:1.05});
 export const mechanismLead=(reduced,chapter=CHAPTER_TWO)=>(reduced?0:chapter.duration)+chapter.config.hold+(reduced?0:chapter.config.eraseDuration);
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -45,8 +48,8 @@ export function mechanismPanel(view){
   const scale=Math.max(.08,Math.min(.95,(view.width-44)/560,view.height*.43/220)),width=560*scale,height=220*scale;
   return{x:(view.width-width)/2,y:Math.max(24,view.height*.36-height/2),width,height,scale};
 }
-export function createMechanismDrawing(index,view,targets={}){
-  const cue=MECHANISM_CUES[index],panel=mechanismPanel(view),strokes=[],s=panel.scale;
+export function createMechanismDrawing(index,view,targets={},cues=MECHANISM_CUES){
+  const cue=cues[index],panel=mechanismPanel(view),strokes=[],s=panel.scale;
   const add=(kind,points)=>strokes.push({kind,points:points.map(([x,y])=>({x:clamp(x,10,view.width-10),y:clamp(y,10,view.height-10)}))});
   const local=(kind,points)=>add(kind,points.map(([x,y])=>[panel.x+x*s,panel.y+y*s]));
   cue.lines.forEach((text,row)=>{
@@ -92,7 +95,7 @@ export function createMechanismDrawing(index,view,targets={}){
 }
 export class MechanismGuidance{
   constructor(levels={}){this.levels=levels;this.startAt=null;this.serial=0;this.drawing=null;this.hint=null;this.key='';}
-  start(level,time=0,reduced=false){this.stop();this.config=level==='man-2'?{cues:MECHANISM_CUES,createDrawing:createMechanismDrawing,chapter:CHAPTER_TWO}:this.levels[level];if(!this.config)return;this.startAt=time;this.serial++;this.initialReduced=reduced;this.lead=mechanismLead(reduced,this.config.chapter);}
+  start(level,time=0,reduced=false,weapon='cannon'){this.stop();const cues=weapon==='laser'?laserCues:MECHANISM_CUES;this.config=level==='man-2'?{cues,createDrawing:(...args)=>createMechanismDrawing(...args,cues),chapter:CHAPTER_TWO}:this.levels[level];if(!this.config)return;this.startAt=time;this.serial++;this.initialReduced=reduced;this.lead=mechanismLead(reduced,this.config.chapter);}
   stop(){this.startAt=null;this.hint?.stop();this.drawing=null;this.key='';}
   snapshot(time,reduced,view,targets){
     const hidden={stage:'hidden',cue:null,index:-1,text:'',serial:this.serial};

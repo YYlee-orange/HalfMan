@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {LEVELS,LEVEL_ART,LOCKED_FRAGMENTS,LevelSelectScene,createLevelList,levelJelly,levelFlame,levelLinkCurve,drawLevelMap,drawLevelFlames} from '../dist/level-select.js';
-test('five playable levels precede one broken future node; new chapters preserve this roster pattern',()=>{
-  const scene=new LevelSelectScene();assert.deepEqual(LEVELS.map(n=>[n.label,n.unlocked]),[['曼-1',true],['曼-2',true],['曼-3',true],['曼-4',true],['曼-5',true],['曼-6',false]]);
-  assert.equal(scene.select('man-6'),false);assert.equal(scene.select('missing'),false);assert.equal(scene.selected,null);
-  assert.deepEqual(scene.snapshot(1440,650).links,[{from:'man-1',to:'man-2'},{from:'man-2',to:'man-3'},{from:'man-3',to:'man-4'},{from:'man-4',to:'man-5'}]);
-  assert.equal(scene.select('man-4'),true);scene.select('man-6');assert.equal(scene.selected,'man-4');scene.reset();assert.equal(scene.selected,null);
+test('six playable levels end at the final chapter; earlier rosters can show one future node',()=>{
+  const scene=new LevelSelectScene();assert.deepEqual(LEVELS.map(n=>[n.label,n.unlocked]),[['曼-1',true],['曼-2',true],['曼-3',true],['曼-4',true],['曼-5',true],['曼-6',true]]);
+  assert.equal(scene.select('man-7'),false);assert.equal(scene.select('missing'),false);assert.equal(scene.selected,null);
+  assert.deepEqual(scene.snapshot(1440,650).links,[{from:'man-1',to:'man-2'},{from:'man-2',to:'man-3'},{from:'man-3',to:'man-4'},{from:'man-4',to:'man-5'},{from:'man-5',to:'man-6'}]);
+  assert.equal(scene.select('man-6'),true);scene.select('man-7');assert.equal(scene.selected,'man-6');scene.reset();assert.equal(scene.selected,null);
   const future=createLevelList(5);assert.equal(future.length,6);assert.equal(future.filter(n=>n.unlocked).length,5);assert.deepEqual(future.at(-1),{id:'man-6',label:'曼-6',unlocked:false});
 });
 test('selection grows flame continuously from zero, jelly recovers, and switching fades the old tail',()=>{

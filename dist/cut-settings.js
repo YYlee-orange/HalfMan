@@ -1,6 +1,7 @@
 import {BOMB_FIELDS,BOMB_DEFAULTS} from './bomb-settings.js';
 import {SCORE_DEFAULTS} from './score-feedback.js';
 import {NUCLEAR_FIELDS,NUCLEAR_DEFAULTS} from './nuclear-settings.js';
+import {FRENZY_FIELDS,FRENZY_DEFAULTS} from './score-meteor-rules.js';
 const row=(key,label,group,min,max,step,unit='',scale=1)=>({key,label,group,min,max,step,unit,scale});
 export const CUT_FIELDS=Object.freeze([
   row('meteorSpeed','陨石初速度','陨石坠落',0,300,1,'px/s'),row('meteorGravity','陨石重力加速度','陨石坠落',0,400,1,'px/s²'),
@@ -19,6 +20,7 @@ export const CUT_FIELDS=Object.freeze([
   row('cameraBase','基础镜头位移','刀光与镜头',0,40,.5,'px'),row('cameraExtra','快划额外位移','刀光与镜头',0,60,.5,'px'),row('cameraDuration','镜头回正时长','刀光与镜头',0,.6,.01,'ms',1000),
   ...BOMB_FIELDS,
   ...NUCLEAR_FIELDS,
+  ...FRENZY_FIELDS,
   row('scoreGainScale','加分冲击放大','分数反馈',1,1.8,.01,'倍'),row('scoreHeavyScale','重扣分冲击放大','分数反馈',1,2,.01,'倍'),
   row('scoreRotation','数字倾斜幅度','分数反馈',0,8,.1,'°'),row('scoreRoll','数字滚动时长','分数反馈',.05,.22,.005,'ms',1000),
   row('scoreSourceLife','来源提示停留','分数反馈',.4,2,.05,'s'),row('scoreMerge','来源合并窗口','分数反馈',.05,.6,.01,'ms',1000),
@@ -27,7 +29,7 @@ export const CUT_FIELDS=Object.freeze([
 export const CUT_BASELINE=Object.freeze({meteorSpeed:24,meteorGravity:34,normalBase:1.2,normalExtra:.8,alongBase:.12,alongExtra:.18,inherit:1,speedFull:12,variation:.15,
   spinBase:180,spinExtra:180,hitStop:.04,hitCooldown:.11,burst:.13,spinRecovery:11,formation:.27,gravity:175,drag:.85,
   particleBase:6,particleExtra:4,particleSpeed:1,particleSize:1,particleLife:.16,flashFrames:1,flashWidth:2,
-  bladeLife:.065,bladeExtra:.05,bladeWidth:1,bladeLength:.25,cameraBase:2,cameraExtra:2,cameraDuration:.08,...BOMB_DEFAULTS,...SCORE_DEFAULTS,...NUCLEAR_DEFAULTS});
+  bladeLife:.065,bladeExtra:.05,bladeWidth:1,bladeLength:.25,cameraBase:2,cameraExtra:2,cameraDuration:.08,...BOMB_DEFAULTS,...SCORE_DEFAULTS,...NUCLEAR_DEFAULTS,...FRENZY_DEFAULTS});
 export const CUT_DEFAULTS=Object.freeze({...CUT_BASELINE,meteorSpeed:30,normalBase:2,normalExtra:2.8,alongBase:.3,alongExtra:.59,inherit:.7,speedFull:5,variation:.14,
   spinBase:540,spinExtra:720,hitStop:.075,hitCooldown:.18,burst:.20,spinRecovery:7,formation:.36,gravity:375,drag:.95,
   particleBase:18,particleExtra:15,particleSpeed:1.6,particleSize:2.9,particleLife:.46,flashFrames:4,flashWidth:6,
@@ -35,7 +37,7 @@ export const CUT_DEFAULTS=Object.freeze({...CUT_BASELINE,meteorSpeed:30,normalBa
 export const CUT={...CUT_DEFAULTS};
 export const CUT_STORAGE_KEY='man-cut-tuning-v1';
 export const CUT_PRESET_KEY='man-cut-saved-preset-v1';
-export const CUT_DEFAULTS_REVISION=1;
+export const CUT_DEFAULTS_REVISION=3;
 const listeners=new Set(),fields=new Map(CUT_FIELDS.map(f=>[f.key,f]));
 let saveTimer;
 export const cutSettingsSnapshot=()=>({...CUT});
@@ -51,6 +53,11 @@ export function flushCutSettings(){
 export function cutSettingsFromDraft(saved){
   if(saved?.version!==1)return {...CUT_DEFAULTS};
   const values=sanitizeCutSettings(saved.values);
+  if(saved.defaultsRevision===1||saved.defaultsRevision===2){
+    if(saved.defaultsRevision===1&&values.frenzyZoom===1.7)values.frenzyZoom=CUT_DEFAULTS.frenzyZoom;
+    values.nuclearCloudOpacity=CUT_DEFAULTS.nuclearCloudOpacity;
+    return values;
+  }
   // Apply the requested preset once on upgrade, retaining separately tuned meteor physics.
   return saved.defaultsRevision===CUT_DEFAULTS_REVISION?values:{...CUT_DEFAULTS,meteorSpeed:values.meteorSpeed,meteorGravity:values.meteorGravity};
 }

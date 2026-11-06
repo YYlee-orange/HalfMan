@@ -54,3 +54,16 @@ test('panels remain shut during the cut and the extra .1 second after its tip re
     if(s.phase==='opening')assert.equal(s.cutProgress,1);
   }
 });
+
+test('the credits handoff finishes at closed doors with no dashed line or reveal',()=>{
+  for(const reduced of [false,true]){
+    const t=new SceneTransition(),events=[];
+    t.begin({closeOnly:true,reduced,onCovered:()=>{
+      const frame=t.snapshot();close(frame.coverage,1);close(frame.cutProgress,0);events.push(frame.phase);
+    },onComplete:()=>events.push('complete')});
+    close(t.duration,t.timings.close);
+    t.step(t.duration*.5);close(t.snapshot().coverage,.5);close(t.snapshot().cutProgress,0);
+    t.step(1);assert.deepEqual(events,['covered','complete']);assert.equal(t.active,false);
+    t.begin();close(t.duration,.9);
+  }
+});

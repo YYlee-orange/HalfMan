@@ -6,11 +6,14 @@ const skins=[{paper:'#f7f8f5',ink:'#292d2b'},{paper:'#191e1c',ink:'#e5eae4'}];
 // A reusable cover/swap/reveal clock. It knows nothing about routes or GameModel.
 export class SceneTransition{
   constructor(){this.active=false;this.time=0;this.paused=false;this.covered=false;this.reduced=false;this.fromDark=false;this.onCovered=null;this.onComplete=null;}
-  begin({dark=false,reduced=false,onCovered=()=>{},onComplete=()=>{}}={}){
+  begin({dark=false,reduced=false,closeOnly=false,onCovered=()=>{},onComplete=()=>{}}={}){
     if(this.active)return false;
-    Object.assign(this,{active:true,time:0,paused:false,covered:false,reduced,fromDark:dark,onCovered,onComplete});return true;
+    Object.assign(this,{active:true,time:0,paused:false,covered:false,reduced,closeOnly,fromDark:dark,onCovered,onComplete});return true;
   }
-  get timings(){return this.reduced?{close:SCENE_TRANSITION.reducedClose,hold:SCENE_TRANSITION.reducedHold,cutPause:0,open:SCENE_TRANSITION.reducedOpen}:SCENE_TRANSITION;}
+  get timings(){
+    if(this.closeOnly)return {close:this.reduced?SCENE_TRANSITION.reducedClose:SCENE_TRANSITION.close,hold:0,cutPause:0,open:0};
+    return this.reduced?{close:SCENE_TRANSITION.reducedClose,hold:SCENE_TRANSITION.reducedHold,cutPause:0,open:SCENE_TRANSITION.reducedOpen}:SCENE_TRANSITION;
+  }
   get duration(){const t=this.timings;return t.close+t.hold+t.cutPause+t.open;}
   step(dt){
     if(!this.active||this.paused||!Number.isFinite(dt)||dt<=0)return;
@@ -23,12 +26,17 @@ export class SceneTransition{
   }
   snapshot(){
     const {close,hold,cutPause,open}=this.timings,t=this.time,revealAt=close+hold+cutPause;
-    const phase=!this.active?'idle':t<close?'closing':t<close+hold?'covered':t<revealAt?'cut-pause':'opening';
-    const coverage=!this.active?0:t<close?smooth(clamp(t/close)):t<revealAt?1:1-smooth(clamp((t-revealAt)/open));
+    const phase=!this.active?'idle':t<close?'closing':this.closeOnly||t<close+hold?'covered':t<revealAt?'cut-pause':'opening';
+    const coverage=!this.active?0:t<close?smooth(clamp(t/close)):this.closeOnly||t<revealAt?1:1-smooth(clamp((t-revealAt)/open));
     // The cut reaches the bottom before the additional closed-door pause begins.
-    const cutProgress=!this.active||t<close?0:this.reduced?1:clamp((t-close)/hold);
+    const cutProgress=!this.active||this.closeOnly||t<close?0:this.reduced?1:clamp((t-close)/hold);
     return{active:this.active,time:t,duration:this.duration,phase,coverage,cutProgress,covered:this.covered,paused:this.paused,reduced:this.reduced,fromDark:this.fromDark,layerDark:!this.fromDark};
   }
+}
+
+export function drawTransitionBackdrop(ctx,sky,{width,height,dark,reduced}){
+  ctx.fillStyle=skins[Number(dark)].paper;ctx.fillRect(0,0,width,height);
+  drawBackground(ctx,sky,{width,height,dark,reduced,emphasis:1.85});
 }
 
 export function transitionSeam(width,height){
@@ -52,8 +60,8 @@ export class SceneTransitionRenderer{
     ctx.clearRect(0,0,width,height);if(!frame.active||frame.coverage<=0)return;
     this.resize(width,height,dpr);
     const p=this.panel.getContext('2d'),skin=skins[Number(frame.layerDark)],seam=transitionSeam(width,height);
-    p.setTransform(this.ratio,0,0,this.ratio,0,0);p.globalAlpha=1;p.globalCompositeOperation='source-over';p.fillStyle=skin.paper;p.fillRect(0,0,width,height);
-    drawBackground(p,sky,{width,height,dark:frame.layerDark,reduced:frame.reduced,emphasis:1.85});
+    p.setTransform(this.ratio,0,0,this.ratio,0,0);p.globalAlpha=1;p.globalCompositeOperation='source-over';
+    drawTransitionBackdrop(p,sky,{width,height,dark:frame.layerDark,reduced:frame.reduced});
     if(glyph&&path){p.save();p.translate(width/2,height/2);p.scale(seam.size/glyph.height,seam.size/glyph.height);p.translate(-glyph.width/2,-glyph.height/2);p.fillStyle=skin.ink;p.fill(path);p.restore();}
     if(frame.cutProgress>0){
       const unit=Math.max(.7,Math.min(width/1440,height/810)),head=height*frame.cutProgress;

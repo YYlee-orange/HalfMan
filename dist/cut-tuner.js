@@ -1,7 +1,7 @@
 import {CUT,CUT_FIELDS,CUT_DEFAULTS,CUT_BASELINE,applyCutSettings,setCutSetting,subscribeCutSettings,cutSettingsSnapshot,flushCutSettings,saveCutPreset,restoreCutPreset,readCutPreset} from './cut-settings.js';
 import {NUCLEAR_RULES} from './nuclear.js';
 const $=id=>document.getElementById(id);
-export function installCutTuner({summon,summonBomb,launchNuclear=()=>false,enableMotion,onChange=()=>{}}){
+export function installCutTuner({summon,summonBomb,summonScore=()=>false,launchNuclear=()=>false,triggerBossSkill=()=>false,triggerBossDeath=()=>false,enableMotion,onChange=()=>{}}){
   const panel=$('cut-tuner'),toggle=$('tuning-button'),body=$('tuner-body'),status=$('tuner-status'),inputs=new Map();
   let drag=null;
   const format=(field,value)=>`${Number((value*field.scale).toFixed(2))}${field.unit?` ${field.unit}`:''}`;
@@ -14,7 +14,7 @@ export function installCutTuner({summon,summonBomb,launchNuclear=()=>false,enabl
       const value=document.createElement('output');value.htmlFor=row.htmlFor;
       const input=document.createElement('input');input.id=row.htmlFor;input.type='range';input.dataset.param=field.key;
       input.min=String(field.min*field.scale);input.max=String(field.max*field.scale);input.step=String(field.step*field.scale);
-      input.addEventListener('input',()=>{setCutSetting(field.key,Number(input.value)/field.scale);status.textContent=field.key.startsWith('score')?'已生效。下一次分数变化使用新的反馈参数。':field.key==='nuclearCloudOpacity'?'已实时更新整朵蘑菇云的不透明度。':field.key.startsWith('nuclear')?'已生效，下一次核爆使用新的白光持续时间。':field.key.startsWith('bomb')?'已生效。点击“召唤慢！”可测试炸弹效果。':field.key==='meteorSpeed'?'已生效，下一颗陨石使用此初速度。':field.key==='meteorGravity'?'已生效，场上陨石已使用此加速度。':'已生效，切开下一颗陨石查看效果。';});
+      input.addEventListener('input',()=>{setCutSetting(field.key,Number(input.value)/field.scale);status.textContent=field.key.startsWith('frenzy')?'已生效，点击“生成分数陨石”测试慢动作与特写。':field.key.startsWith('score')?'已生效。下一次分数变化使用新的反馈参数。':field.key==='nuclearCloudOpacity'?'已实时更新整朵蘑菇云的不透明度。':field.key.startsWith('nuclear')?'已生效，下一次核爆使用新的白光持续时间。':field.key.startsWith('bomb')?'已生效。点击“召唤慢！”可测试炸弹效果。':field.key==='meteorSpeed'?'已生效，下一颗陨石使用此初速度。':field.key==='meteorGravity'?'已生效，场上陨石已使用此加速度。':'已生效，切开下一颗陨石查看效果。';});
       inputs.set(field.key,{input,value,field});row.append(caption,value,input);details.append(row);
     }
     $('tuner-fields').append(details);
@@ -29,8 +29,12 @@ export function installCutTuner({summon,summonBomb,launchNuclear=()=>false,enabl
   $('tuner-baseline').addEventListener('click',()=>{applyCutSettings(CUT_BASELINE);status.textContent='已切回上一版参数，可直接对照。';});
   $('tuner-summon').addEventListener('click',()=>{status.textContent=summon()===false?'字形尚未准备好，请稍后再试。':'已从屏幕外召唤一颗陨石。';});
   $('tuner-bomb').addEventListener('click',()=>{status.textContent=summonBomb()===false?'字形尚未准备好，请稍后再试。':'已从屏幕外召唤慢！划中后查看蓄爆和子母弹。';});
+  $('tuner-score').addEventListener('click',()=>{status.textContent=summonScore()===false?'请稍后再试。':'已从屏幕外生成分数陨石，连续划动测试连切。';});
   $('tuner-nuclear').addEventListener('click',()=>{status.textContent=launchNuclear()===false?'请进入第五关后测试核弹。':`核弹预警已刷新，${NUCLEAR_RULES.warning} 秒后发射；重复点击会重新计时。`;});
   $('tuner-full-motion').addEventListener('click',()=>enableMotion());
+  $('tuner-boss-skill').addEventListener('click',()=>{status.textContent=triggerBossSkill('bomb')===false?'黑曼巴当前忙碌，请等它可以再次出招。':'已触发，黑曼巴就位后会蓄势并连发 8 颗「慢！」。';});
+  $('tuner-boss-elbow').addEventListener('click',()=>{status.textContent=triggerBossSkill('elbow')===false?'黑曼巴当前忙碌，请等它可以再次出招。':'已触发，黑曼巴就位后会对雷达发动肘击。';});
+  $('tuner-boss-death').addEventListener('click',()=>{if(!triggerBossDeath())status.textContent='请等黑曼巴入场后再测试坠机。';});
   $('tuner-save').addEventListener('click',()=>{status.textContent=saveCutPreset()?'已保存到当前浏览器。后续试调可读取这份参数。':'保存失败：浏览器未允许本地存储，请用“复制参数”备份。';syncSaved();});
   $('tuner-load').addEventListener('click',()=>{status.textContent=restoreCutPreset()?'已读取保存的参数，全部滑条已同步。':'未找到可用的已保存参数。';syncSaved();});
   $('tuner-copy').addEventListener('click',async()=>{

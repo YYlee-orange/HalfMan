@@ -6,13 +6,14 @@ import {cutParticles} from '../dist/cut-feedback.js';
 import {BOMB_FIELDS,BOMB_DEFAULTS} from '../dist/bomb-settings.js';
 import {SCORE_DEFAULTS} from '../dist/score-feedback.js';
 import {NUCLEAR_FIELDS,NUCLEAR_DEFAULTS} from '../dist/nuclear-settings.js';
+import {FRENZY_FIELDS,FRENZY_DEFAULTS} from '../dist/score-meteor-rules.js';
 test('approved preset matches all requested parameters and retains meteor defaults',()=>{
-  assert.equal(CUT_FIELDS.length,32+BOMB_FIELDS.length+Object.keys(SCORE_DEFAULTS).length+NUCLEAR_FIELDS.length);assert.deepEqual(CUT,CUT_DEFAULTS);
+  assert.equal(CUT_FIELDS.length,32+BOMB_FIELDS.length+Object.keys(SCORE_DEFAULTS).length+NUCLEAR_FIELDS.length+FRENZY_FIELDS.length);assert.deepEqual(CUT,CUT_DEFAULTS);
   assert.deepEqual(CUT_DEFAULTS,{meteorSpeed:30,meteorGravity:34,
     normalBase:2,normalExtra:2.8,alongBase:.3,alongExtra:.59,inherit:.7,speedFull:5,variation:.14,
     spinBase:540,spinExtra:720,hitStop:.075,hitCooldown:.18,burst:.2,spinRecovery:7,formation:.36,gravity:375,drag:.95,
     particleBase:18,particleExtra:15,particleSpeed:1.6,particleSize:2.9,particleLife:.46,flashFrames:4,flashWidth:6,
-    bladeLife:.13,bladeExtra:.1,bladeWidth:1.2,bladeLength:.45,cameraBase:12,cameraExtra:10,cameraDuration:.19,...BOMB_DEFAULTS,...SCORE_DEFAULTS,...NUCLEAR_DEFAULTS});
+    bladeLife:.13,bladeExtra:.1,bladeWidth:1.2,bladeLength:.45,cameraBase:12,cameraExtra:10,cameraDuration:.19,...BOMB_DEFAULTS,...SCORE_DEFAULTS,...NUCLEAR_DEFAULTS,...FRENZY_DEFAULTS});
 });
 
 test('upgrade replaces legacy cut drafts once, preserves meteor tuning, then honors new drafts',()=>{
@@ -21,6 +22,14 @@ test('upgrade replaces legacy cut drafts once, preserves meteor tuning, then hon
   assert.equal(upgraded.normalBase,2);assert.equal(upgraded.particleSize,2.9);
   assert.equal(upgraded.meteorSpeed,80);assert.equal(upgraded.meteorGravity,120);
   assert.equal(cutSettingsFromDraft({...legacy,defaultsRevision:CUT_DEFAULTS_REVISION}).normalBase,10);
+  const oldDefault={version:1,defaultsRevision:1,values:{frenzyZoom:1.7,normalBase:5}};
+  const closer=cutSettingsFromDraft(oldDefault);
+  assert.equal(closer.frenzyZoom,CUT_DEFAULTS.frenzyZoom);assert.equal(closer.normalBase,5);
+  assert.equal(cutSettingsFromDraft({...oldDefault,values:{frenzyZoom:2.1}}).frenzyZoom,2.1);
+  const cloudDraft={version:1,defaultsRevision:2,values:{normalBase:6,nuclearCloudOpacity:.45}};
+  assert.equal(cutSettingsFromDraft(cloudDraft).nuclearCloudOpacity,1);
+  assert.equal(cutSettingsFromDraft(cloudDraft).normalBase,6);
+  assert.equal(cutSettingsFromDraft({...cloudDraft,defaultsRevision:CUT_DEFAULTS_REVISION}).nuclearCloudOpacity,.45);
   assert.deepEqual(cutSettingsFromDraft(null),CUT_DEFAULTS);
 });
 

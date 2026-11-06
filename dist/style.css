@@ -16,7 +16,7 @@ dialog{position:fixed;inset:26px 26px auto auto;margin:0;width:min(340px,calc(10
 /* The game menu is centered on both axes, including on short and mobile screens. */
 #game-menu{inset:0;margin:auto;width:min(340px,calc(100vw - 32px));height:max-content;max-height:calc(100dvh - 32px)}
 .menu-return{width:100%;margin-top:12px;font-size:11px}
-/* Game objects: canvas 0, HUD 1, nuclear effects 2. Results 3, menu 4, editor 20 and navigation 30 remain above them. */
+/* Game objects: canvas 0, HUD 1, nuclear and crash effects 2. Results 3, menu 4, editor 20 and navigation 30 remain above them. */
 #scene{z-index:0}.game-ui{z-index:1}.opening-layer{z-index:2}.overlay{z-index:3}.menu-button{z-index:4}
 #scene-transition{z-index:30;pointer-events:auto}
 .playfield[data-route-transition=true]{cursor:wait}
@@ -26,3 +26,27 @@ dialog{position:fixed;inset:26px 26px auto auto;margin:0;width:min(340px,calc(10
 .playfield[data-scene=transition][data-reveal=true] .shelter-controls{visibility:visible}
 .playfield[data-scene=transition] .intro{will-change:transform,opacity;pointer-events:none}
 .playfield[data-scene=transition] .intro button{pointer-events:none}
+/* During score-meteor focus only the score, remaining time and object feedback stay visible. */
+.playfield[data-score-frenzy=true] .game-ui:not(.hud):not(.score-panel),
+.playfield[data-score-frenzy=true] .other-metrics,
+.playfield[data-score-frenzy=true] .menu-button,
+.playfield[data-score-frenzy=true] #cannon-cooling-hud,
+:root[data-score-frenzy=true] #cut-tuner{visibility:hidden!important;pointer-events:none!important}
+
+.playfield[data-boss-flight=true] .hud,.playfield[data-boss-flight=true] .score-panel>:not(#cannon-cooling-hud){display:none}
+
+.boss-health{position:absolute;left:50%;top:23px;transform:translateX(-50%);width:min(720px,68vw);color:var(--ink);pointer-events:none}
+.boss-health-heading{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:8px}
+.boss-health-name{font-size:17px;letter-spacing:.12em}
+.boss-health-value{font:400 23px/1 'Man Numbers',monospace;font-variant-numeric:tabular-nums}
+.boss-health-track{position:relative;height:16px;overflow:hidden;background:var(--line);border-radius:2px}
+.boss-health-fill,.boss-health-loss{position:absolute;inset:0;transform-origin:left center}
+.boss-health-fill{background:var(--ink);transition-property:none}
+.boss-health[data-damage-motion] .boss-health-fill{transition:transform 110ms ease-out}
+.boss-health-loss{background:#f2bd48}
+@media(max-width:700px){.boss-health{top:22px;left:18px;right:89px;width:auto;transform:none}.boss-health-name{font-size:13px}.boss-health-value{font-size:18px}.boss-health-track{height:12px}}
+@media(max-height:450px){.boss-health{top:13px}.boss-health-heading{margin-bottom:5px}.boss-health-track{height:11px}}
+@media(prefers-reduced-motion:reduce){.boss-health[data-damage-motion] .boss-health-fill{transition:none}}
+#results[data-outcome]{top:50%;transform:translate(-50%,-50%);text-align:center;max-height:calc(100% - 24px);overflow:auto}
+#results[data-outcome] h2{font-size:clamp(28px,5vw,43px);margin-bottom:22px}
+#results[data-outcome] .primary{display:block;margin-inline:auto}

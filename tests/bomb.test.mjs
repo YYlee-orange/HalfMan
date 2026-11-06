@@ -30,7 +30,7 @@ test('bomb outline partitions the real YaHei glyph into six complete, disjoint c
 
 test('five percent boundary is exact, forced normal preserves the 27-variant bag, bomb size and tone stay fixed',()=>{
   let roll=.049999;const g=new GameModel(()=>roll);g.start();
-  assert.equal(g.spawnMeteor(700,100).kind,'bomb');roll=.05;assert.equal(g.spawnMeteor(700,100).kind,'man');
+  assert.equal(g.spawnMeteor(700,100).kind,'bomb');roll=.05;assert.notEqual(g.spawnMeteor(700,100).kind,'bomb');
   roll=.9;assert.equal(g.spawnMeteor(700,100).kind,'man');
   try{
     applyCutSettings({bombChance:1},{persist:false});assert.equal(g.spawnMeteor(700,100).kind,'bomb');

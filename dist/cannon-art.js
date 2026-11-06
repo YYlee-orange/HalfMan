@@ -1,9 +1,11 @@
 import {CANNON,cannonGeometry} from './cannon.js';
 import {createDebris} from './effects.js';
 import {fragmentLandingTime,airHitFragmentAt} from './fx-physics.js';
+import {drawLaserBarrel} from './laser-art.js';
 const clamp=n=>Math.max(0,Math.min(1,n)),light='#d6a34b',side='#89602e';
 export function cannonBodyStretch(frame,time,reduced=false){const age=frame.entryAge,jelly=reduced?0:age>=0&&age<.85?-.32*Math.sin(age*23)*Math.exp(-4.5*age):0,idle=reduced?0:Math.sin(time*2.1)*.035,x=1+jelly+idle;return{x,y:1/x};}
 export function drawCannon(ctx,frame,geometry,time,reduced=false){
+  const laser=frame.weapon==='laser',light=laser?'#648fb6':'#d6a34b',side=laser?'#34536e':'#89602e';
   const {x,y,scale:s}=geometry,stretch=cannonBodyStretch(frame,time,reduced);
   ctx.save();ctx.translate(x,y);ctx.scale(s*stretch.x,s*stretch.y);
   ctx.fillStyle=side;ctx.beginPath();ctx.ellipse(0,-6,76,14,0,0,Math.PI*2);ctx.fill();
@@ -12,6 +14,7 @@ export function drawCannon(ctx,frame,geometry,time,reduced=false){
   ctx.restore();ctx.save();ctx.translate(x,y);ctx.scale(s,s);
   // A fixed sleeve and a sliding two-tone barrel make the recoil legible.
   ctx.save();ctx.translate(0,-79);ctx.rotate(frame.angle);
+  if(laser)drawLaserBarrel(ctx,frame,time,reduced);else{
   ctx.fillStyle=side;ctx.beginPath();ctx.roundRect(-13,-22,65,44,13);ctx.fill();
   const recoil=reduced?0:frame.shotAge>=0&&frame.shotAge<.38?20*Math.exp(-10*frame.shotAge)*Math.cos(frame.shotAge*9):0;
   ctx.translate(-recoil,0);ctx.fillStyle=light;ctx.beginPath();ctx.moveTo(23,-13);ctx.lineTo(CANNON.barrel,-11);ctx.lineTo(CANNON.barrel,11);ctx.lineTo(23,14);ctx.closePath();ctx.fill();
@@ -21,7 +24,7 @@ export function drawCannon(ctx,frame,geometry,time,reduced=false){
     const f=(1-frame.shotAge/.15)**.7;ctx.save();ctx.translate(CANNON.barrel+4,0);ctx.globalAlpha=.9*f;ctx.fillStyle='#f04416';ctx.beginPath();ctx.moveTo(0,-6);ctx.lineTo(32,-24*f);ctx.lineTo(28,-8);ctx.lineTo(76*f+10,0);ctx.lineTo(29,9);ctx.lineTo(39,23*f);ctx.lineTo(0,6);ctx.closePath();ctx.fill();
     ctx.globalAlpha=f;ctx.fillStyle='#ffcd29';ctx.beginPath();ctx.moveTo(0,-5);ctx.quadraticCurveTo(16,-12,49*f+8,0);ctx.quadraticCurveTo(15,12,0,5);ctx.fill();ctx.restore();
   }
-  ctx.restore();ctx.fillStyle=light;ctx.beginPath();ctx.arc(0,-79,25,0,Math.PI*2);ctx.fill();ctx.save();ctx.beginPath();ctx.arc(0,-79,25,0,Math.PI*2);ctx.clip();ctx.fillStyle=side;ctx.beginPath();ctx.ellipse(16,-77,12,29,-.2,0,Math.PI*2);ctx.fill();ctx.restore();ctx.restore();
+  }ctx.restore();ctx.fillStyle=light;ctx.beginPath();ctx.arc(0,-79,25,0,Math.PI*2);ctx.fill();ctx.save();ctx.beginPath();ctx.arc(0,-79,25,0,Math.PI*2);ctx.clip();ctx.fillStyle=side;ctx.beginPath();ctx.ellipse(16,-77,12,29,-.2,0,Math.PI*2);ctx.fill();ctx.restore();ctx.restore();
 }
 export function drawCannonReticle(ctx,frame,point,reduced,ink){
   const age=Math.max(0,frame.modeAge),p=reduced?Number(frame.aiming):frame.aiming?clamp(age/.28):1-clamp(age/.18);

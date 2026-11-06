@@ -6,7 +6,7 @@ import {RADAR_SCALE,radarWorldPoint,radarScreenPoint} from '../dist/radar.js';
 import {personView} from '../dist/body-geometry.js';
 import {halfHeight} from '../dist/variants.js';
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
-function game(time=0){const g=new GameModel(()=>.5);g.start();g.realTime=time;g.sceneTime=time;g.remaining=CONFIG.roundSeconds-time;g.drainEvents();return g;}
+function game(time=0,level='man-1'){const g=new GameModel(()=>.5);g.start(level);g.realTime=time;g.sceneTime=time;g.remaining=g.roundSeconds-time;g.drainEvents();return g;}
 
 test('30-second steps add .2 to output and .05 to size/capacity with a 1.5 growth cap',()=>{
   assert.equal(progressionAt(29.999999).stage,0);
@@ -24,6 +24,20 @@ test('each full charge produces the guaranteed count and exact fractional chance
     const wave=g.drainEvents().find(e=>e.type==='summonWave');assert.equal(wave.count,count);close(wave.multiplier,progressionAt(time).summonMultiplier);
   }
   const g=game(150);g.addCharge(3*g.chargeMax+17);assert.equal(g.summonWaves,3);assert.equal(g.meteors.length,6);close(g.charge,17);
+});
+
+test('level six summons one meteor per full radar charge even after radar growth',()=>{
+  for(const time of [30.9,150,600]){
+    const g=game(time,'man-6');g.random=()=>.1;
+    close(g.chargeMax,CONFIG.chargeMax*progressionAt(time).radarFactor);
+    assert.equal(g.progression.summonMultiplier,1);
+    for(let i=0;i<9;i++)g.clickRadar();
+    assert.equal(g.meteors.length,1);
+    assert.equal(g.summonWaves,1);close(g.chargePercent,8);
+    g.addCharge(g.chargeMax-g.charge);
+    assert.equal(g.meteors.length,2);
+    assert.deepEqual(g.drainEvents().filter(e=>e.type==='summonWave').map(e=>[e.count,e.multiplier]),[[1,1],[1,1]]);
+  }
 });
 
 test('a click always fills twelve percent and a worker keeps the original absolute rate',()=>{

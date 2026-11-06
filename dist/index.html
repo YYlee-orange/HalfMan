@@ -22,6 +22,8 @@
   <link rel="stylesheet" href="shield-control.css">
   <link rel="stylesheet" href="cannon.css">
   <link rel="stylesheet" href="popup-motion.css">
+  <link rel="stylesheet" href="weapon-choice.css">
+  <link rel="stylesheet" href="game-credits.css">
   <title>曼 Man</title>
 </head>
 <body>
@@ -51,9 +53,16 @@
         <span id="cannon-cooling-label" class="cannon-cooling-label">开炮冷却</span>
       </div>
     </section>
+    <section id="boss-health" class="boss-health game-ui" hidden>
+      <div id="boss-health-heading" class="boss-health-heading"><span class="boss-health-name">黑曼巴直升机</span><strong id="boss-health-value" class="boss-health-value" aria-hidden="true">0%</strong></div>
+      <div id="boss-health-track" class="boss-health-track" role="progressbar" aria-label="黑曼巴直升机血量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+        <span id="boss-health-loss" class="boss-health-loss"></span>
+        <span id="boss-health-fill" class="boss-health-fill"></span>
+      </div>
+    </section>
     <button id="menu-button" class="menu-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="game-menu">菜单</button>
     <section id="nuclear-countdown" class="nuclear-countdown game-ui" aria-label="核弹倒计时" hidden>
-      <strong class="nuclear-clock-value sr-only">0:45</strong>
+      <strong class="nuclear-clock-value sr-only">0:10</strong>
       <div class="nuclear-clock-motion" aria-hidden="true"><span class="nuclear-clock-digits"><span class="score-digit nuclear-clock-digit"><span class="score-digit-track"><span>0</span><span>0</span><span>0</span></span></span><span class="nuclear-clock-separator">:</span><span class="score-digit nuclear-clock-digit"><span class="score-digit-track"><span>0</span><span>0</span><span>0</span></span></span><span class="score-digit nuclear-clock-digit"><span class="score-digit-track"><span>0</span><span>0</span><span>0</span></span></span></span></div>
     </section>
     <canvas id="nuclear-layer" class="nuclear-layer" aria-hidden="true" hidden></canvas>
@@ -80,16 +89,78 @@
         <p class="intro-kicker">三分钟的字形小游戏</p>
         <h1>把「曼」切开。</h1>
         <p>直接点按红色雷达召唤陨石。<br>划动切开，让两半成为人力。</p>
-        <button id="start-button" class="primary" disabled>正在准备字形</button>
+        <div class="intro-actions"><button id="start-button" class="primary" disabled>正在准备字形</button><button id="weapon-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="weapon-menu">武器：防空炮</button></div>
         <p id="loading-status" class="loading-status" role="status">读取字形资源</p>
       </section>
       <section class="results" id="results" hidden>
-        <p class="intro-kicker">时间到</p><h2>这一局，留下了多少人？</h2>
+        <p id="results-kicker" class="intro-kicker">时间到</p><h2 id="results-title">这一局，留下了多少人？</h2>
         <div class="result-total" id="final-score">0</div>
-        <div class="result-breakdown"><p><span>切开陨石</span><strong id="final-cuts">0 × 100</strong></p><p><span>存活小人</span><strong id="final-alive">0 × 5</strong></p><p id="cannon-result" hidden><span>防空炮击落</span><strong id="final-cannon">0</strong></p><p id="farm-result" hidden><span>农场收成</span><strong id="final-farm">0</strong></p><p><span>炸弹扣分</span><strong id="final-penalty">0</strong></p><p><span>本机最佳</span><strong id="best-score">0</strong></p></div>
+        <div class="result-breakdown" id="results-breakdown"><p><span>切开陨石</span><strong id="final-cuts">0 × 100</strong></p><p><span>存活小人</span><strong id="final-alive">0 × 5</strong></p><p id="cannon-result" hidden><span>防空炮击落</span><strong id="final-cannon">0</strong></p><p id="farm-result" hidden><span>农场收成</span><strong id="final-farm">0</strong></p><div id="score-meteor-result" hidden><p><span>分数陨石连切</span><strong id="final-score-cuts">0</strong></p><p><span>分数碎片</span><strong id="final-score-fragments">0</strong></p></div><p><span>炸弹扣分</span><strong id="final-penalty">0</strong></p><p><span>本机最佳</span><strong id="best-score">0</strong></p></div>
         <button id="results-levels-button" class="primary">返回选关</button>
       </section>
     </div>
+    <section id="credits" class="credits" aria-labelledby="credits-title" tabindex="-1" hidden>
+      <div class="credits-window">
+        <div class="credits-track">
+          <div class="credits-mark" aria-hidden="true"><svg viewBox="0 0 1 1"><path></path></svg></div>
+          <header class="credits-header">
+            <h1 id="credits-title" class="credits-title">GAME CREDITS</h1>
+            <p class="credits-subtitle">制作人员名单</p>
+          </header>
+          <section class="credits-group">
+            <h2>PRODUCTION</h2><p class="credits-subtitle">制作与统筹</p>
+            <ul><li>总制作人 — 火山哥哥</li><li>执行制作人 — 火山哥哥</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>GAME DESIGN</h2><p class="credits-subtitle">游戏设计</p>
+            <ul><li>游戏总监 — 火山哥哥</li><li>核心玩法设计 — 火山哥哥</li><li>关卡设计 — 火山哥哥</li><li>数值与平衡设计 — 火山哥哥</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>PROGRAMMING</h2><p class="credits-subtitle">程序开发</p>
+            <ul><li>主程序员 — codex大人</li><li>游戏玩法程序 — codex大人</li><li>游戏系统程序 — codex大人</li><li>工具与编辑器开发 — codex大人</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>ART DIRECTION</h2><p class="credits-subtitle">美术设计</p>
+            <ul><li>美术总监 — codex大人</li><li>角色设计 — codex大人</li><li>场景与道具设计 — codex大人</li><li>视觉效果设计 — codex大人</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>ANIMATION</h2><p class="credits-subtitle">动画制作</p>
+            <ul><li>角色动画 — codex大人</li><li>特效动画 — codex大人</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>UI / UX DESIGN</h2><p class="credits-subtitle">界面与交互设计</p>
+            <ul><li>用户界面设计 — 火山哥哥</li><li>交互体验设计 — 火山哥哥</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>TECHNICAL ART</h2><p class="credits-subtitle">技术美术</p>
+            <ul><li>Shader 开发 — codex大人</li><li>视觉效果整合 — codex大人</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>AUDIO</h2><p class="credits-subtitle">声音制作</p>
+            <ul><li>音频整合 — 火山哥哥</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>QUALITY ASSURANCE</h2><p class="credits-subtitle">质量测试</p>
+            <ul><li>测试负责人 — 火山哥哥</li><li>游戏玩法测试 — 火山哥哥</li><li>兼容性与性能测试 — 火山哥哥</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>MARKETING</h2><p class="credits-subtitle">宣传与发行</p>
+            <ul><li>宣传素材制作 — 火山哥哥</li><li>社区运营 — 火山哥哥</li></ul>
+          </section>
+          <section class="credits-group">
+            <h2>SPECIAL THANKS</h2><p class="credits-subtitle">特别鸣谢</p>
+            <ul><li>一直支持火山哥哥的家人和朋友</li></ul>
+          </section>
+          <footer class="credits-finale">
+            <p>AND YOU</p><p>感谢你的游玩</p><p id="credits-final-line">THANK YOU FOR PLAYING</p>
+          </footer>
+        </div>
+      </div>
+      <button id="credits-skip" type="button" aria-label="跳过制作人员名单">跳过</button>
+      <button id="credits-play" type="button" hidden>播放片尾音频</button>
+      <p id="credits-audio-notice" role="status" hidden>片尾音频未能播放</p>
+    </section>
+    <audio id="credits-audio" src="assets/credits-theme.m4a" preload="metadata"></audio>
     <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
   </main>
   <dialog id="game-menu" aria-labelledby="menu-title">
@@ -101,6 +172,16 @@
     <button id="return-levels-button" class="menu-return" hidden disabled>返回选关</button>
     <details id="help"><summary>怎么玩</summary><p>直接点按红色雷达蓄力。按住鼠标或触屏，任意方向划中空中的「曼」。</p><p>小人会分散到雷达或其脚下工作，饿了前往饭桶或桶边吃饭。点击“进入”：非工作者立即出发，工作者每隔 1 秒离岗；防空洞人数不限。</p><p>避开高对比度的“慢！”炸弹：划中会扣分并放出六颗子母弹，飞行接触和落地爆炸都可杀死小人。</p><p>第二至四关可拨动雷达护盾，开启后持续 4 秒，随后冷却 15 秒。护盾拦截接触球面的陨石和子母弹，罩内小人在开启期间免受它们的伤害。</p><p>第二至四关的防空炮位于防空洞与饭桶之间。点击“射”进入瞄准，持续招满 6 名非雷达工作者，按住画面开火，无人时也可低速射击；过热后自动冷却。点击“退”恢复普通操作。瞄准期间炮内人员不消耗饥饿；退出后留岗，按雷达工作速度扣饥饿，饿了再去吃饭。炮内人员始终免受陨石伤害；普通曼击落 +75，慢字号击落 +50，均不产生新 man。瞄准时也可用方向键移动、按住空格开火。</p><p>第三、四关中，让下落的小人落在空中农场。最多 9 人，农民会恢复饥饿并定期产出收成，不响应召回或炮塔征召；满员后多余的小人会走下船。农场上的小人仍会受到陨石伤害。</p><p>当前规则：切开陨石 +100 分，每位现存小人计入 5 分；新生、死亡时会同步变分。右上显示总分及变化来源。陨石坠落途中和撞地时都会砸死小人，洞内受到保护。</p><p>切换标签页暂停。键盘：空格召唤；方向键移动准星，Shift 切割；P 暂停，Esc 关闭菜单。</p></details>
   </dialog>
+  <dialog id="weapon-menu" aria-labelledby="weapon-title">
+    <div class="menu-heading"><h2 id="weapon-title">武器与玩法</h2><button class="text-button" data-weapon-close aria-label="完成武器与玩法设置">完成</button></div>
+    <p class="weapon-intro">选择第二关起使用的炮塔。人数越多，攻击越快。</p>
+    <div class="weapon-options">
+      <button class="weapon-option" data-weapon="cannon" aria-pressed="true"><strong>防空炮</strong><span>连续发射炮弹，逐颗击落陨石。</span></button>
+      <button class="weapon-option" data-weapon="laser" aria-pressed="false"><strong>激光炮</strong><span>按住蓄满后持续发射穿透光束，松开停火。</span></button>
+    </div>
+    <label class="score-meteor-option" for="score-meteor-enabled"><span><strong>分数陨石</strong><small>2% 概率出现。连续切割每刀 +17，碎片落地每块 +13。</small></span><input id="score-meteor-enabled" type="checkbox"></label>
+    <p class="weapon-status" data-weapon-status role="status">已选择防空炮</p>
+  </dialog>
   <aside id="cut-tuner" class="cut-tuner" role="dialog" aria-modal="false" aria-labelledby="tuner-title" hidden>
     <header id="tuner-drag" class="tuner-heading"><div><h2 id="tuner-title">切割调参</h2><span>临时编辑窗口 · 拖动标题移动</span></div><div><button id="tuner-collapse" aria-expanded="true">收起</button><button id="tuner-close" aria-label="关闭调参窗口">关闭</button></div></header>
     <div id="tuner-body">
@@ -108,7 +189,7 @@
       <p id="tuner-motion-note" class="tuner-note" hidden>当前已减弱动态，旋转和镜头反馈会受限。<button id="tuner-full-motion">开启完整动态</button></p>
       <div class="tuner-presets"><button id="tuner-strong">恢复默认参数</button><button id="tuner-baseline">上一版参数</button></div>
       <div id="tuner-fields" class="tuner-fields"></div>
-      <footer class="tuner-footer"><div><button id="tuner-save">保存参数</button><button id="tuner-load" disabled>读取已保存参数</button></div><div><button id="tuner-summon">召唤一颗陨石</button><button id="tuner-bomb">召唤慢！</button><button id="tuner-nuclear">发射核弹 / 刷新预警</button><button id="tuner-copy">复制参数</button></div><p id="tuner-status" role="status">参数保存在当前浏览器；试调不会覆盖手动保存的配置。</p><textarea id="tuner-export" aria-label="导出的切割参数" readonly hidden></textarea></footer>
+      <footer class="tuner-footer"><div><button id="tuner-save">保存参数</button><button id="tuner-load" disabled>读取已保存参数</button></div><div><button id="tuner-summon">召唤一颗陨石</button><button id="tuner-bomb">召唤慢！</button><button id="tuner-score">生成分数陨石</button><button id="tuner-nuclear">发射核弹 / 刷新预警</button><button id="tuner-boss-skill" type="button" hidden>触发 Boss 技能</button><button id="tuner-boss-elbow" type="button" hidden>测试肘击</button><button id="tuner-boss-death" type="button" hidden>测试 Boss 死亡</button><button id="tuner-copy">复制参数</button></div><p id="tuner-status" role="status">参数保存在当前浏览器；试调不会覆盖手动保存的配置。</p><textarea id="tuner-export" aria-label="导出的切割参数" readonly hidden></textarea></footer>
     </div>
   </aside>
   <script type="module" src="game.js"></script>

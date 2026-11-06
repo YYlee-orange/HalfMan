@@ -16,9 +16,9 @@ try{
     await page.click('#start-button');await page.evaluate(()=>window.__MAN_QA__.finishOpening());
     let s=await read();assert.equal(s.route,'levels');assert.equal(s.game.status,'ready');assert.equal(s.game.realTime,0);assert.equal(s.game.remaining,180);
     assert.equal(await page.locator('#score-panel').isVisible(),false);assert.equal(await page.locator('#radar-controls').isVisible(),false);
-    assert.equal(await page.locator('.level-node').count(),5);assert.equal(await page.locator('[data-level="man-4"]').count(),1);assert.equal(await page.locator('[data-level="man-6"]').count(),0);
+    assert.equal(await page.locator('.level-node').count(),6);assert.equal(await page.locator('[data-level="man-4"]').count(),1);assert.equal(await page.locator('[data-level="man-6"]').count(),1);
     assert.equal(await page.locator('#level-enter,#level-status,#level-back').count(),0);
-    assert.ok(!/曼-6|未解锁/.test(await page.locator('#level-select').textContent()));
+    assert.ok(!/曼-7|未解锁/.test(await page.locator('#level-select').textContent()));
     const captions=await page.locator('.level-node-label').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y};})),rockY=s.selection.nodes[0].y;
     await step(.25);assert.notEqual((await read()).selection.nodes[0].y,rockY);
     assert.deepEqual(await page.locator('.level-node-label').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y};})),captions);
@@ -33,8 +33,10 @@ try{
     }
     await page.click('[data-level="man-2"]');await step(.1);s=await read();assert.equal(s.selection.selected,'man-2');
     await page.locator('#level-map').evaluate(e=>{e.scrollLeft=e.scrollWidth-e.clientWidth;});
-    const locked=await page.evaluate(()=>{const map=document.getElementById('level-map'),r=map.getBoundingClientRect(),n=window.__MAN__.levelSelection.nodes.at(-1);return{x:r.x+n.x-map.scrollLeft,y:r.y+n.y};});await page.mouse.click(locked.x,locked.y);
-    assert.equal((await read()).selection.selected,'man-2');
+    const finalLevel=page.locator('[data-level="man-6"]');
+    await finalLevel.click();assert.equal((await read()).selection.selected,'man-6');
+    assert.equal((await read()).route,'levels');
+    await page.click('[data-level="man-2"]');assert.equal((await read()).selection.selected,'man-2');
     await page.click('#menu-button');assert.equal(await page.locator('#pause-button').isVisible(),false);assert.equal(await page.locator('#return-start-button').isVisible(),true);
     const paused=(await read()).selection;await step(5);assert.deepEqual((await read()).selection,paused);await page.click('#menu-close');
     await step(3);assert.equal((await read()).route,'levels');assert.equal(await page.evaluate(()=>window.__MAN__.sceneTransition.active),false);
@@ -42,8 +44,39 @@ try{
     await finish();s=await read();assert.equal(s.game.status,'playing');assert.equal(s.game.realTime,0);await step(.1);assert.ok((await read()).game.remaining<180);
     await page.click('#menu-button');await page.click('#return-levels-button');await finish();s=await read();assert.equal(s.route,'levels');assert.equal(s.selection.selected,'man-2');assert.equal(s.game.realTime,0);
     await step(2);assert.equal((await read()).route,'levels','returning never replays a queued entry');
+    await finalLevel.click();await finalLevel.click();await finish();
+    s=await read();assert.equal(s.level,'man-6');assert.equal(s.game.status,'playing');
+    assert.equal(s.game.remaining,Infinity);assert.equal(await page.locator('#time').isVisible(),false);
+    assert.equal(await page.locator('.score-motion').isVisible(),false);
+    const hawk=()=>page.evaluate(()=>window.__MAN__.blackHawk);
+    const initial=await hawk();assert.equal(initial.mounts.length,3);
+    await step(2.55);assert.notDeepEqual(await hawk(),initial);
+    await page.click('#menu-button');const frozen=await hawk();await step(2);assert.deepEqual(await hawk(),frozen);
+    await page.click('#pause-button');await step(6.275);
+    assert.notDeepEqual(await hawk(),frozen);
+    await page.click('#menu-button');await page.click('#menu-restart-button');await finish();
+    assert.deepEqual(await hawk(),initial);
+    await page.evaluate(async()=>{
+      const q=window.__MAN_QA__,g=q.model,v=g.view;
+      const {halfHeight}=await import('/variants.js');
+      const {BLACK_HAWK_PATROL_START,blackHawkTargets}=await import('/black-hawk-flight.js');
+      q.step(BLACK_HAWK_PATROL_START+.02);
+      const mount=window.__MAN__.blackHawk.mounts[0];
+      const person={id:g.nextId++,size:64,part:1,variantId:1,born:-1,birthSize:64,phase:0,hunger:100,state:'fall',landed:false,
+        x:mount.x/v.sx,y:0,vx:0,vy:8400/v.sy};
+      person.y=(mount.y-65-halfHeight(person)*(v.sy-v.character))/v.sy;
+      g.people.push(person);window.__MAN_QA__.step(1/60);
+      const target=blackHawkTargets(g.blackHawkState)[0];
+      g.cannon.bullets.push({id:1,x:target.x/v.sx,y:(target.y+65)/v.sy,vx:0,vy:-8300/v.sy,age:0});
+    });
+    await step(.15);
+    const contact=await hawk();
+    assert.equal(contact.mounts[0].count,1);
+    assert.equal(contact.dodging,true);
+    await page.click('#menu-button');await page.click('#return-levels-button');await finish();
+    assert.equal(await hawk(),null);
     await page.click('#menu-button');await page.click('#return-start-button');await finish();assert.equal((await read()).route,'title');
-    results.push({viewport,dark,realSelection:true,lockedRejected:true,clockAndPause:true,routing:true});
+    results.push({viewport,dark,realSelection:true,blackHawkFlight:true,clockAndPause:true,routing:true});
   }
   // Keyboard and live RAF use the same handlers as real visitors, not probe-only entry.
   await page.click('#start-button');await page.evaluate(()=>window.__MAN_QA__.finishOpening());await page.locator('[data-level="man-1"]').focus();await page.keyboard.press('ArrowRight');assert.equal((await read()).selection.selected,'man-2');

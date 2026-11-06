@@ -24,7 +24,6 @@ const letters={...MECHANISM_LETTER_STROKES,
   小:[[[51,8],[52,47],[52,86],[43,96],[31,88]],[[25,40],[17,60],[6,75]],[[75,32],[86,51],[96,69]]],
   人:[[[53,8],[48,39],[35,66],[20,85],[5,96]],[[49,38],[62,62],[79,83],[96,92]]],
   降:[[[6,18],[28,11],[20,35],[29,48],[27,63],[16,60]],[[7,19],[9,98]],[[61,6],[49,27],[35,42]],[[50,26],[86,17],[72,40],[52,56],[34,63]],[[50,34],[68,48],[83,56],[97,60]],[[41,71],[67,66],[94,62]],[[47,64],[44,86],[91,80]],[[70,56],[71,98]]],
-  落:[[[5,23],[51,17],[96,12]],[[32,6],[33,32]],[[68,3],[68,29]],[[12,44],[21,51]],[[6,63],[16,70]],[[8,97],[26,76]],[[62,34],[51,50],[39,60]],[[51,47],[83,39],[72,59],[50,72],[34,76]],[[51,54],[72,66],[96,70]],[[46,81],[47,98]],[[46,81],[81,75],[82,94],[47,98]]],
   上:[[[49,6],[50,49],[51,90]],[[51,43],[83,36]],[[7,98],[52,93],[96,87]]],
   面:[[[6,18],[52,12],[95,7]],[[52,13],[44,34]],[[13,38],[15,98]],[[13,38],[89,30],[90,90],[15,98]],[[35,38],[36,92]],[[65,34],[66,89]],[[37,55],[64,51]],[[38,74],[64,70]]],
   就:[[[27,5],[34,14]],[[5,28],[31,22],[54,17]],[[14,40],[44,34],[45,56],[15,62],[14,40]],[[31,60],[32,89],[25,97],[17,91]],[[14,73],[4,89]],[[44,69],[53,82]],[[58,35],[78,30],[98,24]],[[76,6],[75,40],[67,70],[53,94]],[[85,32],[85,78],[91,91],[99,78]],[[86,9],[93,17]]],
@@ -55,9 +54,9 @@ export const FARM_CUES=Object.freeze([
 ]);
 export const FARM_LETTER_STROKES=Object.freeze(letters);
 export function createFarmGuidanceDrawing(index,view){return createWrittenCueDrawing(FARM_CUES[index],index,view);}
-export function createWrittenCueDrawing(cue,index,view,bank=letters){
-  const area=farmGuidanceArea(view),count=[...cue.text].length;
-  const columns=Math.max(4,Math.min(10,Math.round(Math.sqrt(count*area.width/area.height)))),lines=[];
+export function createWrittenCueDrawing(cue,index,view,bank=letters,area=farmGuidanceArea(view)){
+  const count=[...cue.text].length;
+  const columns=cue.wrap===false?count:Math.max(4,Math.min(10,Math.round(Math.sqrt(count*area.width/area.height)))),lines=[];
   for(const original of cue.lines){const chars=original.match(/\.{3}|./gu);for(let i=0;i<chars.length;i+=columns)lines.push(chars.slice(i,i+columns).join(''));}
   const advance=letter=>letter==='.'?28:letter==='，'?52:112,lineWidth=line=>[...line].reduce((n,c)=>n+advance(c),0);
   const nativeWidth=Math.max(...lines.map((line,i)=>lineWidth(line)+(cue.sketch&&i===lines.length-1?145:0)))+24,nativeHeight=lines.length*118+14;

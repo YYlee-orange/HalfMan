@@ -22,3 +22,13 @@ export function impactShakeAt(age,amplitude,duration=.34){
   const envelope=amplitude*(1-age/duration)**1.5;
   return{dx:Math.sin(age*117+.8)*envelope*.7,dy:Math.sin(age*83+1.3)*envelope,envelope};
 }
+export function drawBlastLetters(ctx,letters,outline='#261435'){
+  ctx.save();ctx.font='900 100px Impact, "Arial Black", sans-serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='#fff9ee';ctx.strokeStyle=outline;ctx.lineWidth=8;ctx.lineJoin='round';
+  for(const [letter,x,y,tilt,height,width] of letters){
+    ctx.save();ctx.translate(x,y);ctx.rotate(tilt);ctx.scale(1,height);
+    ctx.strokeText(letter,0,0,width);ctx.fillText(letter,0,0,width);ctx.restore();
+  }
+  ctx.restore();
+}

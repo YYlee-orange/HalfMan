@@ -12,7 +12,7 @@ import {VOLCANO,VOLCANO_SHAPES,VolcanoRenderer,volcanoFrame,volcanoGeometry,volc
 import {viewMetrics} from '../dist/body-geometry.js';
 import {halfHeight} from '../dist/variants.js';
 test('fourth level shares every third-level mechanism and has its own title without the agriculture teaching sequence',()=>{
-  assert.equal(AVAILABLE_LEVEL_COUNT,5);assert.deepEqual({...levelFeatures('man-4'),volcano:false},levelFeatures('man-3'));assert.equal(levelFeatures('man-4').volcano,true);
+  assert.equal(AVAILABLE_LEVEL_COUNT,6);assert.deepEqual({...levelFeatures('man-4'),volcano:false},levelFeatures('man-3'));assert.equal(levelFeatures('man-4').volcano,true);
   const g=new GameModel(()=>.5);g.start('man-4');assert.equal(g.shield.enabled,true);assert.equal(g.cannon.enabled,true);assert.equal(farmEnabled('man-4'),true);assert.equal(g.farmState.enabled,true);assert.equal(g.remaining,180);assert.equal(g.farmState.capacity,9);
   assert.deepEqual(guidanceFor('man-4').chapter.config.lines,['曼之四','火山']);assert.equal(guidanceFor('man-4').tutorial,false);const hints=new MechanismGuidance(FARM_GUIDANCE);hints.start('man-4');assert.equal(hints.snapshot(10,false,g.view).stage,'hidden');
   assert.equal(farmEnabled('man-2'),false);assert.equal(levelFeatures('man-3').volcano,false);

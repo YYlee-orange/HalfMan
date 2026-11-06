@@ -27,10 +27,16 @@ const letters={
     [[30,71],[54,67],[79,64]],[[55,68],[55,82],[56,94]],[[13,99],[54,96],[94,91]]],
   农:[[[48,7],[52,16],[54,24]],[[15,30],[53,27],[92,22],[84,39]],[[46,30],[32,53],[17,72],[5,81]],[[44,51],[45,92],[66,78]],[[86,44],[72,57],[63,61]],[[57,45],[69,67],[83,84],[97,92]]],
   业:[[[37,8],[38,48],[39,88]],[[63,6],[63,46],[64,87]],[[10,35],[20,49],[28,68]],[[91,30],[83,51],[75,68]],[[5,95],[48,91],[97,86]]],
+  终:[[[28,7],[9,37],[33,31]],[[40,22],[15,64],[43,53]],[[5,87],[38,74]],[[64,6],[56,25],[44,41]],[[55,25],[91,18],[78,44],[60,59],[40,68]],[[54,32],[71,48],[97,60]],[[62,66],[77,76]],[[57,83],[72,90],[89,99]]],
+  章:[[[49,4],[55,14]],[[16,24],[84,18]],[[32,27],[40,39]],[[72,23],[64,38]],[[8,44],[54,40],[96,36]],[[25,53],[26,76]],[[25,53],[79,49],[80,72],[26,76]],[[28,64],[78,60]],[[9,88],[56,83],[95,80]],[[53,75],[54,100]]],
+  黑:[[[20,12],[21,47]],[[20,12],[82,7],[83,42],[21,47]],[[36,18],[42,28]],[[67,15],[61,25]],[[52,10],[52,76]],[[13,62],[54,57],[89,53]],[[6,81],[56,76],[97,71]],[[19,86],[10,99]],[[39,84],[42,97]],[[61,82],[67,95]],[[82,80],[94,93]]],
+  巴:[[[20,18],[80,12],[79,48],[22,55]],[[51,16],[51,50]],[[20,18],[22,76],[30,91],[65,94],[90,87],[95,75]]],
+  坠:[[[9,15],[31,10],[23,31],[32,43],[28,56],[19,51]],[[9,15],[11,66]],[[64,7],[61,31],[52,48],[39,60]],[[61,30],[74,46],[94,58]],[[18,72],[56,67],[86,64]],[[55,64],[56,92]],[[6,99],[54,94],[97,89]]],
+  落:[[[5,23],[51,17],[96,12]],[[32,6],[33,32]],[[68,3],[68,29]],[[12,44],[21,51]],[[6,63],[16,70]],[[8,97],[26,76]],[[62,34],[51,50],[39,60]],[[51,47],[83,39],[72,59],[50,72],[34,76]],[[51,54],[72,66],[96,70]],[[46,81],[47,98]],[[46,81],[81,75],[82,94],[47,98]]],
 };
 export const CHAPTER_LETTER_STROKES=Object.freeze(letters);
-export function createChapterDrawing({order,name,extraLetters={},avoidFarm=false,sketch=null}){
-  const lines=[`曼之${order}`,name],width=400,bank={...letters,...extraLetters},strokes=[];
+export function createChapterDrawing({order,name,extraLetters={},width=400,area=null,avoidFarm=false,sketch=null}){
+  const lines=[`曼之${order}`,name],bank={...letters,...extraLetters},strokes=[];
   for(const [row,text]of lines.entries()){
     const chars=[...text],advance=c=>c===' '?24:c==='!'?46:112,span=chars.reduce((n,c)=>n+advance(c),-12),reserve=row&&sketch?74:0,scale=Math.min(row?1.12:1,(width-48-reserve)/span);
     let cursor=(width-span*scale-reserve)/2;const y=row?160:13;
@@ -46,13 +52,15 @@ export function createChapterDrawing({order,name,extraLetters={},avoidFarm=false
       for(let i=0;i<3;i++){const a=-Math.PI/2+i*Math.PI*2/3;add([{x:cx+Math.cos(a-.45)*13,y:cy+Math.sin(a-.45)*13},...Array.from({length:8},(_,j)=>({x:cx+Math.cos(a-.45+j*.9/7)*r,y:cy+Math.sin(a-.45+j*.9/7)*r})),{x:cx+Math.cos(a+.45)*13,y:cy+Math.sin(a+.45)*13}]);}
     }
   }
-  return createPencilDrawing(Object.freeze({text:lines.join('\n'),lines:Object.freeze(lines),width,height:300,delay:.06,writeDuration:1.3,hold:1.6,eraseDuration:1.05,strokeScale:1.9,avoidFarm}),strokes);
+  return createPencilDrawing(Object.freeze({text:lines.join('\n'),lines:Object.freeze(lines),width,height:300,delay:.06,writeDuration:1.3,hold:1.6,eraseDuration:1.05,strokeScale:1.9,avoidFarm,area}),strokes);
 }
 export const CHAPTER_ONE=createChapterDrawing({order:'一',name:'切！'});
 export const CHAPTER_TWO=createChapterDrawing({order:'二',name:'防空'});
 export const CHAPTER_THREE=createChapterDrawing({order:'三',name:'农业',avoidFarm:true});
 export const CHAPTER_FOUR=createChapterDrawing({order:'四',name:'火山',avoidFarm:true});
 export const CHAPTER_FIVE=createChapterDrawing({order:'五',name:'! 核平 !',avoidFarm:true,sketch:'radiation'});
+export const blackMambaGuidanceArea=({width,height})=>({x:width*.07,y:height*.24,width:width*.86,height:height*.52});
+export const CHAPTER_SIX=createChapterDrawing({order:'终章',name:'黑曼巴坠落',width:580,area:blackMambaGuidanceArea});
 const later=Object.freeze({tutorial:false,chapter:null});
 export const LEVEL_GUIDANCE=Object.freeze({
   'man-1':Object.freeze({tutorial:true,chapter:CHAPTER_ONE}),
@@ -60,11 +68,12 @@ export const LEVEL_GUIDANCE=Object.freeze({
   'man-3':Object.freeze({tutorial:false,chapter:CHAPTER_THREE}),
   'man-4':Object.freeze({tutorial:false,chapter:CHAPTER_FOUR}),
   'man-5':Object.freeze({tutorial:false,chapter:CHAPTER_FIVE}),
+  'man-6':Object.freeze({tutorial:false,chapter:CHAPTER_SIX}),
 });
 export const guidanceFor=levelId=>LEVEL_GUIDANCE[levelId]??later;
 export function chapterHintLayout({width,height},drawing){
-  if(drawing.config.avoidFarm){
-    const area=farmGuidanceArea({width,height}),scale=Math.min(1,(area.width-12)/drawing.config.width,(area.height-8)/drawing.config.height),w=drawing.config.width*scale,h=drawing.config.height*scale;
+  if(drawing.config.avoidFarm||drawing.config.area){
+    const area=(drawing.config.area??farmGuidanceArea)({width,height}),scale=Math.max(.05,Math.min(1,(area.width-12)/drawing.config.width,(area.height-8)/drawing.config.height)),w=drawing.config.width*scale,h=drawing.config.height*scale;
     return{x:area.x+(area.width-w)/2,y:area.y+(area.height-h)/2,width:w,height:h,scale};
   }
   const {width:w,height:h}=drawing.config,margin=height<300?18:72;

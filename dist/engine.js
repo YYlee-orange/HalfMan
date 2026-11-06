@@ -4,18 +4,25 @@ import {makeBomblets,advanceBomblet,bombletView} from './bomb-physics.js';
 import {chooseWorkAnchor,radarWorldPoint,radarIdle,RadarResponse,RADAR_SCALE} from './radar.js';
 import {progressionAt} from './progression.js';
 import {FOOD_X,chooseFoodAnchor,foodWorldPoint,groundAnchor} from './facilities.js';
+import {FOOD_HEALTH,foodContact} from './food-health.js';
 import {jumpProgress} from './movement.js';
 import {viewMetrics,meteorView,personView} from './body-geometry.js';
 import {CUT,cutKinematics,advanceCutFragment,advanceCutPose} from './cut-motion.js';
 import {SCORE_RULES,scoreTotal,scoreSource,scoreChange} from './score-rules.js';
 import {SHIELD,RadarShield,shieldCircle,shieldContains,shieldContact} from './shield.js';
 import {CANNON,Cannon,cannonBulletRadius,shotIntersects} from './cannon.js';
+import {LASER,LaserCannon,laserContact} from './laser.js';
 import {FARM_CROPS,farmGeometry} from './farm.js';
 import {FARM_RULES,onFarm,farmFoot,farmContact,farmYield,emptyCrop,farmEnabled} from './farm-physics.js';
 import {levelFeatures,levelRoundSeconds,DEFAULT_ROUND_SECONDS} from './level-rules.js';
+import {BLACK_HAWK_BOMB_SKILL,BlackHawkCombat} from './black-hawk-combat.js';
+import {BLACK_HAWK_ELBOW_SKILL,ELBOW_STRIKE_END,elbowFrame} from './black-hawk-elbow.js';
+import {blackHawkProjector} from './black-hawk-flight.js';
 import {volcanoFrame} from './volcano.js';
 import {VOLCANO_RULES,volcanoLaunch} from './volcano-physics.js';
-import {NuclearStrike} from './nuclear.js';
+import {BOSS_NUCLEAR_RULES,NuclearStrike} from './nuclear.js';
+import {SCORE_METEOR} from './score-meteor-rules.js';
+import {strikeScoreMeteor,makeScoreFragments,advanceScoreFragment,scoreFocusFrame,scoreFocusCue,advanceScoreSpin,scoreCutLimit} from './score-meteor.js';
 export const CONFIG = Object.freeze({
   width:1440, height:810, ground:808, roundSeconds:DEFAULT_ROUND_SECONDS,
   chargeMax:100, clickCharge:12, workerCharge:3.2,
@@ -27,6 +34,7 @@ export const CONFIG = Object.freeze({
   focusDuration:.11,
 });
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+const PERSON_FALL_GRAVITY=175;
 // Stable for zero acceleration and zero initial speed, including a suspended meteor.
 export function meteorFallTime(distance,velocity,gravity){
   if(distance<=0)return 0;
@@ -39,51 +47,136 @@ export function segmentDistance(p,a,b){
   return Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy);
 }
 export class GameModel {
-  constructor(random=Math.random,scoreRules=SCORE_RULES){this.random=random;this.scoreRules={...SCORE_RULES,...scoreRules};this.view=viewMetrics();this.reducedMotion=false;this.reset();}
+  constructor(random=Math.random,scoreRules=SCORE_RULES){this.random=random;this.scoreRules={...SCORE_RULES,...scoreRules};this.view=viewMetrics();this.reducedMotion=false;this.weaponType='cannon';this.scoreMeteorsEnabled=true;this.reset();}
+  setWeapon(type){if(this.status!=='ready'||!['cannon','laser'].includes(type))return false;this.weaponType=type;this.cannon=this.makeCannon(false);return true;}
+  setScoreMeteors(enabled){if(this.status!=='ready')return false;this.scoreMeteorsEnabled=!!enabled;return true;}
+  makeCannon(enabled){return this.weaponType==='laser'?new LaserCannon(enabled):new Cannon(enabled);}
   get ground(){return CONFIG.ground;}
-  setViewport(width,height){this.view=viewMetrics(width,height);if(this.cannon?.enabled)this.cannon.setAim(this.cannon.aim.x*this.view.sx,this.cannon.aim.y*this.view.sy,this.view,CONFIG.ground);}
+  setViewport(width,height){this.view=viewMetrics(width,height);const hawk=this.blackHawkState;if(hawk)this.blackHawk.step(hawk,hawk,this.view,0,this.reducedMotion);if(this.cannon?.enabled)this.cannon.setAim(this.cannon.aim.x*this.view.sx,this.cannon.aim.y*this.view.sy,this.view,CONFIG.ground);}
   radarPose(){
     const response=this.radarResponse.snapshot(),enabled=!this.reducedMotion;
     return{...response,press:enabled?response.press:0,release:0,reduced:this.reducedMotion,scale:this.radarScale,...radarIdle(this.realTime,enabled)};
   }
   reset(){
     this.status='ready';this.realTime=0;this.sceneTime=0;this.roundSeconds=CONFIG.roundSeconds;this.remaining=this.roundSeconds;
-    this.levelId=null;this.shield=new RadarShield();this.cannon=new Cannon();this.cannonBonus=0;this.cannonKills=0;this.farmBonus=0;this.farmHarvests=0;
+    this.levelId=null;this.shield=new RadarShield();this.cannon=this.makeCannon(false);this.cannonBonus=0;this.cannonKills=0;this.farmBonus=0;this.farmHarvests=0;
     this.charge=0;this.cuts=0;this.deaths=0;this.clicks=0;this.people=[];this.meteors=[];this.bomblets=[];this.bombPenalty=0;this.bombExplosions=0;
     this.events=[];this.nextId=1;this.recallActive=false;this.recallQueue=[];
     this.nextDeparture=0;this.focus=null;this.recallGeneration=0;
     this.variantBag=[];this.totalCharge=0;this.summonWaves=0;this.previousRadarScale=RADAR_SCALE;
     this.radarPulse=-10;this.summonPulse=-10;this.radarResponse=new RadarResponse();
     this.cutStopUntil=-10;this.cutCooldownUntil=-10;this.cutCue=null;
+    this.scoreFragments=[];this.scoreCutBonus=0;this.scoreFragmentBonus=0;this.scoreMeteorCuts=0;this.scoreFocusCue=null;
     this.volcanoPulse=-10;this.volcanoEruptions=0;
-    this.nuclear=new NuclearStrike();
+    this.nuclear=new NuclearStrike();this.blackHawk=null;this.blackHawkNuclearAt=null;this.foodHealth=null;this.foodRepairProgress=0;
   }
-  start(levelId='man-1'){this.reset();this.levelId=levelId;this.roundSeconds=levelRoundSeconds(levelId);this.remaining=this.roundSeconds;const features=levelFeatures(levelId);this.shield=new RadarShield(features.shield);this.cannon=new Cannon(features.cannon);this.nuclear=new NuclearStrike(features.nuclear);this.status='playing';this.emit('start');}
+  start(levelId='man-1'){this.reset();this.levelId=levelId;this.roundSeconds=levelRoundSeconds(levelId);this.remaining=this.roundSeconds;const features=levelFeatures(levelId);this.shield=new RadarShield(features.shield);this.cannon=this.makeCannon(features.cannon);this.nuclear=new NuclearStrike(features.nuclear);this.blackHawk=features.blackHawk?new BlackHawkCombat(this.random):null;this.foodHealth=features.blackHawk?FOOD_HEALTH.max:null;this.status='playing';this.emit('start');}
   emit(type,extra={}){
     if(type==='radar'||type==='radarProgress'){
       this.radarResponse.trigger();this.radarPulse=this.realTime;
     }
-    if(type==='summon'){this.summonPulse=this.realTime;this.radarResponse.trigger(.5);}
+    if(type==='summon'&&extra.meteor?.source!=='boss'){this.summonPulse=this.realTime;this.radarResponse.trigger(.5);}
     if(type==='volcanoErupt'){this.volcanoPulse=this.sceneTime;this.volcanoEruptions++;}
     this.events.push({type,time:this.realTime,sceneTime:this.sceneTime,...extra});
+  }
+  requestBlackHawkSkill(kind='bomb'){
+    if(this.status!=='playing'||!['bomb','elbow'].includes(kind)||!this.blackHawk?.requestSkill(kind,this.sceneTime))return false;
+    this.stepBlackHawkSkill(0);
+    return true;
+  }
+  requestBlackHawkDeath(){
+    const frame=this.blackHawkState;
+    if(this.status!=='playing'||!frame||frame.mode==='entry'||this.blackHawk.finisher?.final)return false;
+    return this.finishBlackHawk(frame);
+  }
+  finishBlackHawk(frame){
+    const boss=this.blackHawk;
+    boss.healthLoss={time:this.sceneTime,from:frame.trailHealth};
+    boss.health=0;boss.destroyed=true;boss.skill=null;boss.queuedSkill=null;
+    this.status='ended';
+    this.emit('blackHawkCrash',{frame,view:this.view,ground:CONFIG.ground});
+    this.emit('end',{bossDefeated:true,alive:this.alive});
+    return true;
+  }
+  stepBlackHawkSkill(dt){
+    if(!this.blackHawk)return;
+    const {count,spacing,speed,drift}=BLACK_HAWK_BOMB_SKILL,nuclear=this.nuclear;
+    const available=nuclear.reason==='blackHawk'&&(nuclear.phase==='warning'||nuclear.phase==='retracting')
+      ?nuclear.launchAt-this.realTime-BOSS_NUCLEAR_RULES.approach:Infinity;
+    const falling=this.meteors.some(m=>m.source==='boss')||this.bomblets.some(c=>c.source==='boss');
+    this.blackHawk.stepSkill(this.sceneTime,available,falling,(index,direction)=>{
+      const x=CONFIG.foodX+direction*((index-(count-1)/2)*spacing-86);
+      this.spawnMeteor(x,undefined,undefined,'bomb',{source:'boss',vx:direction*drift,vy:speed});
+    });
+    const skill=this.blackHawk.skill;
+    if(skill?.kind==='elbow')this.sweepBlackHawkElbow(skill,dt);
+  }
+  sweepBlackHawkElbow(skill,dt){
+    const age=this.sceneTime-skill.start;
+    const previous=Math.max(BLACK_HAWK_ELBOW_SKILL.windup,age-dt),current=Math.min(ELBOW_STRIKE_END,age);
+    if(current<=previous)return;
+    const view=this.view,pose=this.radarPose();
+    const from=elbowFrame(previous,view,CONFIG.ground,pose.scale),to=elbowFrame(current,view,CONFIG.ground,pose.scale);
+    let contact=null;
+    for(const p of this.people){
+      if(p.state!=='work'||!p.onRadar)continue;
+      const point=personView(p,view,CONFIG.ground,this.sceneTime,pose);
+      const rx=to.rx+point.rx,ry=to.ry+point.ry;
+      if(segmentDistance({x:point.x/rx,y:point.y/ry},{x:from.x/rx,y:from.y/ry},{x:to.x/rx,y:to.y/ry})>1)continue;
+      contact??=point;
+      const spread=p.id*.61803398875%1;
+      p.x=point.x/view.sx;
+      p.y=(point.y-halfHeight(p)*(view.sy-view.character))/view.sy;
+      const rise=Math.max(0,(point.y-point.ry-18)/view.sy),ceiling=Math.sqrt(2*PERSON_FALL_GRAVITY*rise);
+      p.vx=-510-125*spread;
+      p.vy=-Math.min(315+55*spread,Math.max(287,ceiling));
+      p.state='fall';p.landed=false;p.onRadar=false;p.cutMotion=false;p.noTrail=true;p.elbowLaunchAt=this.sceneTime;
+      delete p.pendingImpulse;
+    }
+    if(contact&&!skill.hit){
+      skill.hit=true;
+      this.emit('blackHawkElbowHit',{x:contact.x/view.sx,y:contact.y/view.sy});
+    }
   }
   drainEvents(){return this.events.splice(0);}
   get alive(){return this.people.filter(p=>p.state!=='dead').length;}
   get sheltered(){return this.people.filter(p=>p.state==='sheltered').length;}
   get workers(){return this.people.filter(p=>p.state==='work').length;}
-  get score(){return scoreTotal({cuts:this.cuts,alive:this.alive,penalty:this.bombPenalty,bonus:this.cannonBonus+this.farmBonus},this.scoreRules);}
+  get blackHawkEnabled(){return this.blackHawk!==null;}
+  get blackHawkState(){return this.blackHawk?.pose(this.sceneTime,this.view,this.reducedMotion)??null;}
+  get score(){return this.blackHawkEnabled?0:scoreTotal({cuts:this.cuts,alive:this.alive,penalty:this.bombPenalty,bonus:this.cannonBonus+this.farmBonus+this.scoreCutBonus+this.scoreFragmentBonus},this.scoreRules);}
   get farmWorkers(){return this.people.filter(p=>p.state==='farm');}
   get volcanoState(){return{...volcanoFrame(this.levelId,this.view,this.sceneTime,this.reducedMotion,this.volcanoPulse),eruptionCount:this.volcanoEruptions};}
   get nuclearState(){return this.nuclear.snapshot(this.realTime);}
-  requestNuclear(force=false){if(this.status!=='playing'||!this.nuclear.request(this.realTime,force))return false;this.emit('nuclearWarning',this.nuclearState);return true;}
-  noteNuclearBomb(id){if(this.nuclear.noteBomb(id,this.realTime))this.emit('nuclearWarning',this.nuclearState);}
+  requestNuclear(force=false){
+    if(this.status!=='playing'||!this.nuclear.request(this.realTime,force))return false;
+    this.blackHawk?.endNuclearApproach(this.sceneTime);
+    this.emit('nuclearWarning',this.nuclearState);return true;
+  }
+  noteNuclearBomb(id){if(!this.blackHawkEnabled&&this.nuclear.noteBomb(id,this.realTime))this.emit('nuclearWarning',this.nuclearState);}
   stepNuclear(){
-    for(const event of this.nuclear.step(this.realTime,this.view,CONFIG.ground)){
+    const nuclear=this.nuclear,time=this.realTime;
+    if(this.blackHawkNuclearAt!==null&&time+1e-9>=this.blackHawkNuclearAt){
+      nuclear.request(this.blackHawkNuclearAt,true,'blackHawk');
+      this.blackHawkNuclearAt=null;
+      this.emit('nuclearWarning',this.nuclearState);
+    }
+    let origin=null;
+    if(nuclear.reason==='blackHawk'&&(nuclear.phase==='warning'||nuclear.phase==='retracting')){
+      const remaining=nuclear.launchAt-time,frame=this.blackHawkState;
+      if(remaining<=BOSS_NUCLEAR_RULES.approach&&(!frame.dodging||remaining<=.4)){
+        this.blackHawk.beginNuclearApproach(this.sceneTime,Math.max(1/60,remaining));
+      }
+      if(remaining<=1e-9)origin=blackHawkProjector(this.blackHawkState)([0,21,0]);
+    }
+    for(const event of nuclear.step(time,this.view,CONFIG.ground,origin)){
+      if(event.type==='nuclearLaunch')this.blackHawk?.endNuclearApproach(this.sceneTime);
       if(event.type==='nuclearBlast'){
         for(const p of this.people)if(p.state!=='dead'&&p.state!=='sheltered')this.killPerson(p,false);
-        this.meteors=[];this.bomblets=[];
+        this.meteors=[];this.bomblets=[];this.scoreFragments=[];this.scoreFocusCue=null;
       }
       this.emit(event.type,{...event,flashDuration:CUT.nuclearFlash});
+      if(event.type==='nuclearBlast')this.damageFood('nuclear');
     }
   }
   get farmState(){return{enabled:farmEnabled(this.levelId),capacity:FARM_RULES.capacity,workers:this.farmWorkers.length,bonus:this.farmBonus,harvests:this.farmHarvests,crops:this.farmWorkers.map(p=>({id:p.id,cropId:p.farm.cropId,progress:p.farm.progress/FARM_RULES.cycle}))};}
@@ -106,7 +199,7 @@ export class GameModel {
   fillCannon(){
     if(!this.cannon.aiming)return;
     const slots=CANNON.capacity-this.people.filter(p=>p.state==='cannon'||p.state!=='dead'&&p.cannonDraft).length;
-    const candidates=this.people.filter(p=>!p.cannonDraft&&!onFarm(p)&&!['dead','work','cannon'].includes(p.state)).sort((a,b)=>Math.abs(a.x-CANNON.x)-Math.abs(b.x-CANNON.x));
+    const candidates=this.people.filter(p=>!p.cannonDraft&&!onFarm(p)&&!['dead','work','cannon','hawkMounted'].includes(p.state)).sort((a,b)=>Math.abs(a.x-CANNON.x)-Math.abs(b.x-CANNON.x));
     for(const p of candidates.slice(0,Math.max(0,slots))){
       p.cannonDraft=true;p.evacuate=false;
       if(p.state==='sheltered'){p.x=CONFIG.shelterX+12;p.y=CONFIG.ground-halfHeight(p);p.landed=true;}
@@ -116,25 +209,76 @@ export class GameModel {
       else p.state='toCannon';
     }
   }
-  stepCannon(dt){
+  stepCannon(dt,hawkBefore=null){
     if(!this.cannon.enabled)return;
     this.fillCannon();this.cannon.step(dt,this.realTime,this.cannonCrew.length,this.view,CONFIG.ground,this.random,(type,data)=>this.emit(type,data));
+    const hawk=this.blackHawkState;
+    if(this.cannon.weapon==='laser'){
+      const beam=this.cannon.beam;
+      if(beam){
+        const from={x:beam.from.x*this.view.sx,y:beam.from.y*this.view.sy},to={x:beam.to.x*this.view.sx,y:beam.to.y*this.view.sy};
+        if(hawk){
+          const radius=LASER.width*this.view.art/2;
+          if(hawk.staggered)this.hitBlackHawk(from,to,radius,'laser',hawk);
+          else this.blackHawk.dodgeShot(from,to,radius,this.sceneTime,this.view,null,hawk,beam.id);
+        }
+        const targets=[...this.meteors.map(body=>({body,view:meteorView(body,this.view),kind:body.kind})),...this.bomblets.map(body=>({body,view:bombletView(body,this.view),kind:'child'}))];
+        for(const target of targets){
+          if(target.body.shotDown||target.body.impacted||target.body.exploded||target.body.frenzy?.chargeStartedAt!=null)continue;
+          const hit=laserContact(from,to,target.view,LASER.width*this.view.art/2);if(!hit)continue;
+          this.cannonHit(target);
+          const surface=laserContact(from,to,target.view)??{x:hit.x-hit.nx*LASER.width*this.view.art/2,y:hit.y-hit.ny*LASER.width*this.view.art/2};
+          this.cannon.contacts.push({id:target.body.id,x:surface.x/this.view.sx,y:surface.y/this.view.sy,time:this.realTime,angle:Math.atan2(hit.ny,hit.nx),beamAngle:beam.angle});
+        }
+      }
+      this.meteors=this.meteors.filter(m=>!m.shotDown);this.bomblets=this.bomblets.filter(c=>!c.shotDown);return;
+    }
     for(const b of this.cannon.bullets){
       const a={x:b.x*this.view.sx,y:b.y*this.view.sy};b.x+=b.vx*dt;b.y+=b.vy*dt;b.age+=dt;
       const end={x:b.x*this.view.sx,y:b.y*this.view.sy};
-      const targets=[...this.meteors.map(body=>({body,view:meteorView(body,this.view),kind:body.kind})),...this.bomblets.map(body=>({body,view:bombletView(body,this.view),kind:'child'}))].filter(t=>!t.body.shotDown&&!t.body.impacted&&!t.body.exploded).sort((x,y)=>Math.hypot(x.view.x-a.x,x.view.y-a.y)-Math.hypot(y.view.x-a.x,y.view.y-a.y));
-      const hit=targets.find(t=>shotIntersects(a,end,t.view,cannonBulletRadius(this.view)));if(!hit)continue;
-      b.hit=true;hit.body.shotDown=true;const before=this.score,points=hit.kind==='man'?this.scoreRules.cutPoints*.75:hit.kind==='bomb'?50:0;
-      this.cannonBonus+=points;this.cannonKills++;this.emit('cannonHit',{id:hit.body.id,x:hit.view.x/this.view.sx,y:hit.view.y/this.view.sy,kind:hit.kind,tone:hit.body.tone??0,body:{...hit.body}});
-      if(hit.kind==='bomb')this.noteNuclearBomb(hit.body.id);
-      if(points)this.recordScore(before,hit.kind==='man'?'cannonMan':'cannonBomb',points);
+      const targets=[...this.meteors.map(body=>({body,view:meteorView(body,this.view),kind:body.kind})),...this.bomblets.map(body=>({body,view:bombletView(body,this.view),kind:'child'}))].filter(t=>!t.body.shotDown&&!t.body.impacted&&!t.body.exploded&&t.body.frenzy?.chargeStartedAt==null).sort((x,y)=>Math.hypot(x.view.x-a.x,x.view.y-a.y)-Math.hypot(y.view.x-a.x,y.view.y-a.y));
+      const radius=cannonBulletRadius(this.view);
+      const hit=targets.find(t=>shotIntersects(a,end,t.view,radius));
+      if(hawk&&(hawk.staggered||!b.hawkThreat)){
+        const reached=hit?laserContact(a,end,hit.view,radius)??end:end;
+        if(hawk.staggered){
+          if(this.hitBlackHawk(a,reached,radius,'cannon',hawk,hawkBefore??hawk)){b.hit=true;continue;}
+        }else b.hawkThreat=this.blackHawk.dodgeShot(a,reached,radius,this.sceneTime,this.view,hawkBefore,hawk);
+      }
+      if(hit){b.hit=true;this.cannonHit(hit);}
     }
     this.cannon.bullets=this.cannon.bullets.filter(b=>!b.hit&&b.age<CANNON.bulletLife&&b.y>-200&&b.x>-200&&b.x<1640);
     this.meteors=this.meteors.filter(m=>!m.shotDown);this.bomblets=this.bomblets.filter(c=>!c.shotDown);
   }
-  recordScore(before,source,value=0){this.emit('scoreChange',scoreChange(before,this.score,typeof source==='string'?scoreSource(source,this.scoreRules,value):source));}
-  get timeScale(){return 1;}
-  get progression(){return progressionAt(this.realTime);}
+  hitBlackHawk(from,to,radius,source,frame,previous=frame,strokeId=null){
+    if(!frame?.staggered||this.blackHawk.finisher)return false;
+    const contact=source==='cut'
+      ?this.blackHawk.knifeContact(from,to,radius,frame,strokeId,this.sceneTime)
+      :this.blackHawk.hitContact(from,to,radius,frame,previous);
+    if(!contact)return false;
+    const hit=this.blackHawk.takeHit(source,this.sceneTime,to.x-from.x,to.y-from.y);
+    if(!hit)return false;
+    const world=p=>({x:p.x/this.view.sx,y:p.y/this.view.sy});
+    this.emit('blackHawkHit',{...world(contact),source,dx:hit.dx,dy:hit.dy,damage:hit.damage,first:hit.first});
+    if(hit.clear&&!hit.clear.final){
+      const project=blackHawkProjector(frame);
+      const points=[[70,-5,8],[-95,-13,0],[1,-22,9]].map(point=>world(project(point)));
+      this.emit('blackHawkFinish',{points});
+    }
+    return true;
+  }
+  cannonHit(hit){
+    if(hit.kind==='score'){hit.body.shotDown=true;this.cannonKills++;this.burstScoreMeteor(hit.body,'cannon');return;}
+    hit.body.shotDown=true;const before=this.score,points=hit.kind==='man'?this.scoreRules.cutPoints*.75:hit.kind==='bomb'?50:0;
+    this.cannonBonus+=points;this.cannonKills++;this.emit('cannonHit',{id:hit.body.id,x:hit.view.x/this.view.sx,y:hit.view.y/this.view.sy,kind:hit.kind,tone:hit.body.tone??0,weapon:this.weaponType,body:{...hit.body}});
+    if(hit.kind==='bomb')this.noteNuclearBomb(hit.body.id);
+    if(points)this.recordScore(before,hit.kind==='man'?'cannonMan':'cannonBomb',points);
+  }
+  recordScore(before,source,value=0){if(this.blackHawkEnabled)return;this.emit('scoreChange',scoreChange(before,this.score,typeof source==='string'?scoreSource(source,this.scoreRules,value):source));}
+  get scoreFrenzy(){return this.meteors.filter(m=>m.kind==='score'&&m.frenzy&&!m.exploded&&!m.shotDown).sort((a,b)=>b.frenzy.lastCutAt-a.frenzy.lastCutAt)[0]??null;}
+  get scoreFocus(){const m=this.scoreFrenzy;return scoreFocusFrame(m?scoreFocusCue(m):this.scoreFocusCue,this.realTime,this.reducedMotion);}
+  get timeScale(){return 1-(1-CUT.frenzySlowScale)*this.scoreFocus.strength;}
+  get progression(){return progressionAt(this.realTime,!this.blackHawkEnabled);}
   get radarScale(){return RADAR_SCALE*this.progression.radarFactor;}
   get chargeMax(){return CONFIG.chargeMax*this.progression.radarFactor;}
   get chargePercent(){return this.charge/this.chargeMax*100;}
@@ -186,43 +330,66 @@ export class GameModel {
     return this.variantBag.pop();
   }
   spawnMeteor(x,y,variantId,kind,options={}){
-    if(x==null&&y==null&&this.nuclear.chance(this.realTime,this.random))this.emit('nuclearWarning',this.nuclearState);
-    const bomb=kind==='bomb'||(kind!=='man'&&variantId==null&&this.random()<CUT.bombChance);
-    const variant=variantOf(bomb?2:variantId??this.takeVariant()),size=CONFIG.meteorSize*(bomb?SIZE_LEVELS.at(-1):variant.sizeScale),ratio=bomb?BOMB_GLYPH.ratio:variant.ratio;
+    if(kind==='score'&&this.blackHawkEnabled)return null;
+    if(x==null&&y==null&&!this.blackHawkEnabled&&this.nuclear.chance(this.realTime,this.random))this.emit('nuclearWarning',this.nuclearState);
+    const roll=kind==null&&variantId==null?this.random():null,bomb=kind==='bomb'||roll!==null&&roll<CUT.bombChance;
+    const score=kind==='score'||roll!==null&&!bomb&&this.scoreMeteorsEnabled&&!this.blackHawkEnabled&&roll<CUT.bombChance+SCORE_METEOR.chance;
+    const variant=variantOf(bomb||score?2:variantId??this.takeVariant()),size=CONFIG.meteorSize*(bomb||score?SIZE_LEVELS.at(-1):variant.sizeScale),ratio=bomb?BOMB_GLYPH.ratio:score?1:variant.ratio;
     const volcanic=levelFeatures(this.levelId).volcano&&(options.source==='volcano'||options.source!=='sky'&&x==null&&y==null&&this.random()<VOLCANO_RULES.chance);
     if(volcanic){
       const launch=volcanoLaunch(this.view,this.sceneTime,this.reducedMotion,this.volcanoPulse,{size,ratio},CUT.meteorGravity,this.random);
-      const meteor={id:this.nextId++,kind:bomb?'bomb':'man',ratio,variantId:variant.id,fontId:variant.fontId,tone:bomb?0:variant.tone,sizeLevel:variant.sizeLevel,size,...launch};
+      const meteor={id:this.nextId++,kind:bomb?'bomb':score?'score':'man',bodyScale:score?SCORE_METEOR.bodyScale:1,cutLimit:score?scoreCutLimit(this.random):null,ratio,variantId:variant.id,fontId:variant.fontId,tone:bomb||score?0:variant.tone,sizeLevel:variant.sizeLevel,size,...launch};
       this.meteors.push(meteor);this.emit('volcanoErupt',{id:meteor.id,x:launch.mouth.x/this.view.sx,y:launch.mouth.y/this.view.sy});this.emit('summon',{id:meteor.id,x:meteor.x,y:meteor.y,meteor:{...meteor}});return meteor;
     }
     const startX=x??(105+this.random()*1230);
-    let vx=(this.random()<.5?-1:1)*(CONFIG.meteorDrift+this.random()*18);
+    let vx=options.vx??(this.random()<.5?-1:1)*(CONFIG.meteorDrift+this.random()*18);
+    const vy=options.vy??CUT.meteorSpeed;
     const tilt=Math.sign(vx)*(.18+this.random()*.12),v=this.view;
-    const extent=meteorView({x:startX,y:0,size,tilt,variantId:variant.id,ratio},v);
+    const extent=meteorView({x:startX,y:0,size,tilt,variantId:variant.id,ratio,bodyScale:score?SCORE_METEOR.bodyScale:1},v);
     const startY=y??(-28-this.random()*25-extent.ry-size*.5*(v.sy-v.character))/v.sy;
     const distance=Math.max(0,CONFIG.ground-size*.5-startY);
-    const flight=meteorFallTime(distance,CUT.meteorSpeed,CUT.meteorGravity);
+    const flight=meteorFallTime(distance,vy,CUT.meteorGravity);
     if(Number.isFinite(flight)&&(startX+vx*flight<70||startX+vx*flight>1370))vx=-vx;
-    const meteor={id:this.nextId++,kind:bomb?'bomb':'man',ratio,variantId:variant.id,fontId:variant.fontId,tone:bomb?0:variant.tone,sizeLevel:variant.sizeLevel,x:startX,y:startY,vx,vy:CUT.meteorSpeed,size,tilt:Math.sign(vx)*Math.abs(tilt)};
+    const meteor={id:this.nextId++,kind:bomb?'bomb':score?'score':'man',bodyScale:score?SCORE_METEOR.bodyScale:1,cutLimit:score?scoreCutLimit(this.random):null,ratio,variantId:variant.id,fontId:variant.fontId,tone:bomb||score?0:variant.tone,sizeLevel:variant.sizeLevel,x:startX,y:startY,vx,vy,size,tilt:Math.sign(vx)*Math.abs(tilt),...(options.source==='boss'?{source:'boss'}:{})};
     this.meteors.push(meteor);this.emit('summon',{id:meteor.id,x:meteor.x,y:meteor.y,meteor:{...meteor}});return meteor;
   }
   slice(a,b,radius=3,project=null,gesture={}){
     if(this.status!=='playing'||this.cannon.aiming||Math.hypot(b.x-a.x,b.y-a.y)<.5)return [];
+    const hawk=this.blackHawkState;
+    if(hawk?.staggered){
+      const viewPoint=p=>({x:p.x*this.view.sx,y:p.y*this.view.sy});
+      const stroke=gesture.hawkStroke;
+      this.hitBlackHawk(stroke?.from??viewPoint(a),stroke?.to??viewPoint(b),stroke?.radius??radius,'cut',hawk,hawk,gesture.strokeId);
+    }
     const targets=this.meteors.filter(m=>{
-      if(m.arm)return false;
+      if(m.arm||m.exploded||m.impacted||m.shotDown)return false;
       const p=project?project(m):m;
       if(m.kind==='bomb'){
         const rx=(p.rx??m.size*m.ratio/2)+radius,ry=(p.ry??m.size/2)+radius;
         return segmentDistance({x:p.x/rx,y:p.y/ry},{x:a.x/rx,y:a.y/ry},{x:b.x/rx,y:b.y/ry})<=1;
       }
-      return segmentDistance(p,a,b)<=(p.radius??m.size*.52)+radius;
+      return segmentDistance(p,a,b)<=(p.radius??m.size*(m.bodyScale??1)*.52)+radius;
     });
     for(const m of targets)if(m.kind==='bomb'){
       m.arm={time:this.realTime,expand:CUT.bombExpand,contract:CUT.bombContract,radius:CUT.bombChargeRadius,opacity:CUT.bombChargeOpacity};
       this.emit('bombArm',{id:m.id,meteor:{...m}});
     }
-    const hits=targets.filter(m=>m.kind!=='bomb');
-    if(!hits.length)return hits;
+    const scoreHits=[];
+    for(const m of this.meteors.filter(m=>m.kind==='score'&&!m.exploded&&!m.impacted&&!m.shotDown)){
+      const p=project?project(m):m,r=(p.radius??m.size*(m.bodyScale??1)*.52)+radius,touched=targets.includes(m),newStroke=gesture.strokeId!=null&&m.lastScoreStroke!==gesture.strokeId;
+      if(touched&&(!m.scoreSweepInside||newStroke)){
+        const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1,before=this.score,t=clamp(((p.x-a.x)*dx+(p.y-a.y)*dy)/(len*len),0,1),diameter=(r-radius)/.52,direction={x:dx/len,y:dy/len},offset={x:(a.x+dx*t-p.x)/diameter,y:(a.y+dy*t-p.y)/diameter};
+        if(strikeScoreMeteor(m,this.realTime,direction,offset)){
+          this.scoreCutBonus+=SCORE_METEOR.cutPoints;this.scoreMeteorCuts++;
+          this.scoreFocusCue=scoreFocusCue(m);this.cutCue={time:this.realTime,dir:direction,strength:1};
+          const center=meteorView(m,this.view);this.emit('scoreMeteorCut',{id:m.id,x:center.x/this.view.sx,y:center.y/this.view.sy,meteor:{...m,frenzy:{...m.frenzy}},points:SCORE_METEOR.cutPoints,cuts:m.frenzy.cuts,direction,cutOffset:offset});this.recordScore(before,'scoreMeteorCut',SCORE_METEOR.cutPoints);scoreHits.push(m);
+          if(m.frenzy.cuts>=m.frenzy.cutLimit)m.frenzy.chargeStartedAt=this.realTime;
+        }
+      }
+      m.scoreSweepInside=Math.hypot(b.x-p.x,b.y-p.y)<=r;m.lastScoreStroke=gesture.strokeId;
+    }
+    const hits=targets.filter(m=>m.kind!=='bomb'&&m.kind!=='score');
+    if(!hits.length)return scoreHits;
     const ids=new Set(hits.map(m=>m.id));this.meteors=this.meteors.filter(m=>!ids.has(m.id));
     let releaseAt=this.realTime;
     if(this.realTime<this.cutStopUntil)releaseAt=this.cutStopUntil;
@@ -252,14 +419,28 @@ export class GameModel {
       this.emit('cut',{x:m.x,y:m.y,id:m.id,dx:b.x-a.x,dy:b.y-a.y,meteor:{...m},children,releaseAt,kinematics});
       this.recordScore(scoreBefore,'cut');
     }
-    return hits;
+    return [...hits,...scoreHits];
+  }
+  burstScoreMeteor(m,reason='timeout'){
+    if(m.exploded||m.impacted)return;
+    m.exploded=true;const point=meteorView(m,this.view),fragments=makeScoreFragments(m,this.view,()=>this.nextId++,this.random);
+    for(const f of fragments){f.born=this.sceneTime;this.scoreFragments.push(f);}
+    if(this.scoreFocusCue?.id===m.id)this.scoreFocusCue={...scoreFocusCue(m),endedAt:this.realTime};
+    this.emit('scoreMeteorBurst',{id:m.id,x:point.x/this.view.sx,y:point.y/this.view.sy,size:m.size,reason,fragments:fragments.map(f=>({...f}))});
+  }
+  stepScoreFragments(dt){
+    for(const f of this.scoreFragments)if(advanceScoreFragment(f,Math.max(0,this.sceneTime-Math.max(this.sceneTime-dt,f.born)),this.view,CONFIG.ground)){
+      const before=this.score;this.scoreFragmentBonus+=SCORE_METEOR.fragmentPoints;this.recordScore(before,'scoreFragment',SCORE_METEOR.fragmentPoints);
+      this.emit('scoreFragmentLand',{id:f.id,x:f.x,y:CONFIG.ground,points:SCORE_METEOR.fragmentPoints,fragment:{...f}});
+    }
+    this.scoreFragments=this.scoreFragments.filter(f=>!f.landed);
   }
   goalShelter(p){
     if(onFarm(p))return;
     if(this.cannon.aiming&&(p.cannonDraft||p.state==='cannon'))return;
     if(p.state==='sheltered'||p.state==='dead')return;
     p.evacuate=true;
-    if(p.state==='fall')return;
+    if(p.state==='fall'||p.state==='hawkMounted')return;
     if(p.state==='jump'){
       if(p.jump.toAnchor)this.jumpPerson(p,p.x,CONFIG.ground,'toShelter',{duration:.6,height:65});
       else p.jump.nextState='toShelter';
@@ -337,7 +518,7 @@ export class GameModel {
     p.foodAnchor=null;
   }
   killPerson(p,shieldable=false){
-    if(p.state==='dead'||p.state==='sheltered'||shieldable&&(p.state==='cannon'||this.isShieldProtected(p)))return;
+    if(p.state==='dead'||p.state==='sheltered'||p.state==='hawkMounted'||shieldable&&(p.state==='cannon'||this.isShieldProtected(p)))return;
     const scoreBefore=this.score;
     const person={...p,...(p.farm?{farm:{...p.farm}}:{})};p.state='dead';this.deaths++;this.emit('death',{id:p.id,x:p.x,y:p.y,part:p.part,tone:p.tone,person});
     this.recordScore(scoreBefore,'death');
@@ -347,6 +528,33 @@ export class GameModel {
   interceptSurface(a,b,dt){
     const shield=this.interceptShield(a,b),farm=this.interceptFarm(a,b,dt);
     return !shield?farm:!farm?shield:shield.t<=farm.t?shield:farm;
+  }
+  interceptFallingBody(a,b,dt,kind){
+    const surface=this.interceptSurface(a,b,dt);
+    if(!(this.foodHealth>0)||kind==='score')return surface;
+    const food=foodContact(a,b,this.view,CONFIG.ground,this.realTime,this.reducedMotion);
+    return food&&(!surface||food.t<surface.t)?food:surface;
+  }
+  damageFood(kind,point=null){
+    if(this.status!=='playing'||!(this.foodHealth>0))return;
+    this.foodHealth=Math.max(0,this.foodHealth-FOOD_HEALTH.damage[kind]);
+    const v=this.view,x=point?point.x/v.sx:CONFIG.foodX,y=point?point.y/v.sy:CONFIG.ground-40*v.art/v.sy;
+    this.emit('foodHit',{x,y,health:this.foodHealth,kind});
+    if(this.foodHealth>0)return;
+    this.emit('foodDestroyed',{x:CONFIG.foodX,y:CONFIG.ground});
+    this.status='ended';
+    this.people=this.people.filter(p=>p.state!=='dead');
+    this.emit('end',{foodDestroyed:true,alive:this.alive});
+  }
+  repairFood(eatingTime,dt){
+    if(this.foodHealth==null||this.foodHealth>=FOOD_HEALTH.max||!eatingTime)return;
+    const amount=Math.min(FOOD_HEALTH.max-this.foodHealth,eatingTime*FOOD_HEALTH.repairRate,dt*FOOD_HEALTH.maxRepairRate);
+    this.foodHealth+=amount;
+    this.foodRepairProgress+=amount;
+    while(this.foodRepairProgress+1e-8>=FOOD_HEALTH.repairPulse){
+      this.foodRepairProgress=Math.max(0,this.foodRepairProgress-FOOD_HEALTH.repairPulse);
+      this.emit('foodRepair',{x:CONFIG.foodX,y:CONFIG.ground});
+    }
   }
   syncFarmPosition(p){
     const q=farmFoot(p,this.view,this.sceneTime,this.reducedMotion);p.x=q.x/this.view.sx;p.y=q.y/this.view.sy-halfHeight(p);
@@ -388,6 +596,7 @@ export class GameModel {
     }
   }
   sweepMeteor(m,previous){
+    if(m.kind==='score')return;
     if(m.source==='volcano'&&m.fallStartedAt==null)return;
     const a=meteorView(previous,this.view),b=meteorView(m,this.view),pose=this.radarPose();
     for(const p of this.people){
@@ -406,16 +615,22 @@ export class GameModel {
   }
   impactMeteor(m,contact=null){
     if(m.source==='volcano'&&m.fallStartedAt==null)return;
+    if(m.kind==='score'){this.burstScoreMeteor(m,'impact');return;}
     const v=this.view,x=contact?contact.x/v.sx:m.x,y=contact?contact.y/v.sy:CONFIG.ground;
     m.impacted=true;this.emit('impact',{id:m.id,x,y,vx:m.vx,vy:m.vy,size:m.size,tone:m.tone,meteor:{...m},surface:contact?.surface??(contact?'shield':'ground'),normal:contact?.normal});
     if(contact)this.blastPeople(contact.x,contact.y,CONFIG.impactRadius*v.art);
     else for(const p of this.people)if(p.state!=='dead'&&p.state!=='sheltered'&&p.state!=='fall'&&p.state!=='jump'&&!onFarm(p)&&!p.onRadar&&!p.onFood&&Math.abs(p.x-m.x)<=CONFIG.impactRadius)this.killPerson(p,true);
+    if(contact?.surface==='food')this.damageFood(m.kind,contact);
   }
   explodeBomb(m){
     const scoreBefore=this.score;
     const penalty=Math.min(this.score,CUT.bombPenalty);this.bombPenalty+=penalty;this.bombExplosions++;
     const children=makeBomblets(m,this.view,()=>this.nextId++,this.random,CONFIG.ground);
-    for(const c of children){c.born=this.sceneTime;this.bomblets.push(c);}
+    for(const c of children){
+      c.born=this.sceneTime;
+      if(m.source==='boss')c.source='boss';
+      this.bomblets.push(c);
+    }
     m.exploded=true;const p=meteorView(m,this.view);
     this.emit('bombBurst',{id:m.id,x:p.x/this.view.sx,y:p.y/this.view.sy,penalty,meteor:{...m},children:children.map(c=>({...c}))});
     this.noteNuclearBomb(m.id);
@@ -433,8 +648,10 @@ export class GameModel {
     const v=this.view,center=contact??{x:c.x*v.sx,y:CONFIG.ground*v.sy};
     this.blastPeople(center.x,center.y,CUT.bombGroundRadius*v.art);
     c.impacted=true;this.emit('bombletImpact',{id:c.id,x:center.x/v.sx,y:center.y/v.sy,child:{...c},radius:CUT.bombGroundRadius,surface:contact?.surface??(contact?'shield':'ground'),normal:contact?.normal});
+    if(contact?.surface==='food')this.damageFood('child',contact);
   }
   advanceMeteor(m,dt){
+    if(m.kind==='score'&&m.frenzy)return;
     if(m.arm){if(this.realTime-m.arm.time+1e-9>=m.arm.expand+m.arm.contract)this.explodeBomb(m);return;}
     const gravity=m.source==='volcano'?m.gravity:CUT.meteorGravity;let ds=dt;
     if(m.source==='volcano'&&m.fallStartedAt==null){
@@ -444,23 +661,54 @@ export class GameModel {
       m.vy=Math.max(0,m.vy);m.fallStartedAt=this.sceneTime-ds;
       if(ds<1e-12)return;
     }
-    const previous={...m},nextY=m.y+m.vy*ds+.5*gravity*ds*ds,lands=nextY+m.size*.5>=CONFIG.ground;
-    const travel=lands?meteorFallTime(Math.max(0,CONFIG.ground-m.size*.5-m.y),m.vy,gravity):ds;
-    m.x+=m.vx*travel;m.y=lands?CONFIG.ground-m.size*.5:nextY;m.vy+=gravity*travel;
-    const contact=this.interceptSurface(meteorView(previous,this.view),meteorView(m,this.view),ds);
+    const foot=m.size*.5+((m.bodyScale??1)-1)*m.size*.5*this.view.character/this.view.sy;
+    const previous={...m},nextY=m.y+m.vy*ds+.5*gravity*ds*ds,lands=nextY+foot>=CONFIG.ground;
+    const travel=lands?meteorFallTime(Math.max(0,CONFIG.ground-foot-m.y),m.vy,gravity):ds;
+    m.x+=m.vx*travel;m.y=lands?CONFIG.ground-foot:nextY;m.vy+=gravity*travel;
+    const contact=this.interceptFallingBody(meteorView(previous,this.view),meteorView(m,this.view),ds,m.kind);
     if(contact){const hit=travel*contact.t;m.x=previous.x+previous.vx*hit;m.y=previous.y+previous.vy*hit+.5*gravity*hit*hit;m.vy=previous.vy+gravity*hit;this.sweepMeteor(m,previous);this.impactMeteor(m,contact);}
     else{this.sweepMeteor(m,previous);if(lands)this.impactMeteor(m);}
   }
+  catchBlackHawk(p,from,to,sweep){
+    const contact=this.blackHawk?.catchPerson(p,from,to,sweep,this.view,this.sceneTime);
+    if(!contact)return false;
+    const at=contact.point;
+    this.emit(contact.detached?'blackHawkDetach':'blackHawkCatch',{
+      id:p.id,mount:contact.index,...(at?{x:at.root.x/this.view.sx,y:at.root.y/this.view.sy}:{}),
+    });
+    return true;
+  }
   advance(dt){
     this.realTime+=dt;this.remaining=Math.max(0,this.roundSeconds-this.realTime);
-    const ds=dt*this.timeScale;this.sceneTime+=ds;this.radarResponse.step(ds);this.syncRadarGrowth();this.processRecall();this.stepCannon(ds);
-    for(const m of this.meteors)this.advanceMeteor(m,ds);
+    for(const m of this.meteors){
+      const frenzy=m.frenzy;
+      if(m.kind!=='score'||!frenzy||m.exploded)continue;
+      advanceScoreSpin(m,dt);
+      if(frenzy.chargeStartedAt==null&&this.realTime+1e-9>=frenzy.deadline)frenzy.chargeStartedAt=frenzy.deadline;
+      if(frenzy.chargeStartedAt!=null&&this.realTime+1e-9>=frenzy.chargeStartedAt+SCORE_METEOR.chargeDuration){
+        this.burstScoreMeteor(m,frenzy.cuts>=frenzy.cutLimit?'cutLimit':'timeout');
+      }
+    }
+    const ds=dt*this.timeScale,hawkBefore=this.blackHawkState;
+    this.sceneTime+=ds;
+    const resolving=this.blackHawk?.finisher;
+    if(this.blackHawk?.advance(this.sceneTime)){
+      this.finishBlackHawk(this.blackHawkState);
+      return;
+    }
+    if(resolving?.stage===2&&!this.blackHawk.finisher)this.blackHawkNuclearAt=this.realTime+BOSS_NUCLEAR_RULES.delay;
+    this.radarResponse.step(ds);this.syncRadarGrowth();this.processRecall();this.stepCannon(ds,hawkBefore);
+    const hawkSweep=hawkBefore?this.blackHawk.step(hawkBefore,this.blackHawkState,this.view,ds,this.reducedMotion):null;
+    for(const m of this.meteors){this.advanceMeteor(m,ds);if(this.status==='ended')break;}
     this.meteors=this.meteors.filter(m=>!m.impacted&&!m.exploded);
+    if(this.status==='ended')return;
+    this.stepScoreFragments(ds);
+    let eatingTime=0;
     for(const p of this.people){
-      if(p.state==='dead'||p.state==='sheltered')continue;
+      if(p.state==='dead'||p.state==='sheltered'||p.state==='hawkMounted')continue;
       let fragmentDt=ds;
       if(p.cutMotion){
-        fragmentDt=Math.max(0,this.realTime-Math.max(this.realTime-dt,p.releaseAt));
+        fragmentDt=Math.max(0,this.realTime-Math.max(this.realTime-dt,p.releaseAt))*this.timeScale;
         if(fragmentDt>0&&p.pendingImpulse){
           p.vx=p.pendingImpulse.vx;p.vy=p.pendingImpulse.vy;p.angularVelocity=p.pendingImpulse.angularVelocity;delete p.pendingImpulse;
           this.emit('cutRelease',{id:p.id});
@@ -470,11 +718,13 @@ export class GameModel {
       if(p.state==='fall'){
         const previous=personView(p,this.view,CONFIG.ground,this.sceneTime-ds,this.radarPose()),footRadius=halfHeight(p)*this.view.character;
         if(p.cutMotion)advanceCutFragment(p,fragmentDt);
-        else{p.y+=p.vy*ds+.5*175*ds*ds;p.vy+=175*ds;p.x+=p.vx*ds;p.vx*=Math.exp(-1.6*ds);}
+        else{p.y+=p.vy*ds+.5*PERSON_FALL_GRAVITY*ds*ds;p.vy+=PERSON_FALL_GRAVITY*ds;p.x+=p.vx*ds;p.vx*=Math.exp(-1.6*ds);}
         if(!p.cutMotion||fragmentDt>0)p.x=clamp(p.x,30,1410);
         const current=personView(p,this.view,CONFIG.ground,this.sceneTime,this.radarPose());
+        if((!p.cutMotion||fragmentDt>0)&&this.catchBlackHawk(p,previous,current,hawkSweep))continue;
         if((!p.cutMotion||fragmentDt>0)&&this.boardFarm(p,{...previous,rx:0,ry:footRadius},{...current,rx:0,ry:footRadius},ds))continue;
         if((!p.cutMotion||fragmentDt>0)&&p.y>=CONFIG.ground-halfHeight(p)){
+          delete p.elbowLaunchAt;
           p.y=CONFIG.ground-halfHeight(p);p.landed=true;p.landedAt=this.realTime;
           p.state=p.cannonDraft&&this.cannon.aiming?'toCannon':'toWork';if(p.skipFarm&&p.hunger<=0){this.planFood(p);p.state='toFood';}delete p.skipFarm;this.emit('land',{id:p.id,x:p.x,y:CONFIG.ground,person:{...p}});
           if(this.recallActive)this.goalShelter(p);
@@ -484,6 +734,7 @@ export class GameModel {
         const j=p.jump;j.elapsed=Math.min(j.duration,j.elapsed+ds);const t=jumpProgress(j);
         p.x=j.fromX+(j.toX-j.fromX)*t;p.y=j.fromY+(j.toY-j.fromY)*t-4*j.height*t*(1-t)-halfHeight(p);
         const current=personView(p,this.view,CONFIG.ground,this.sceneTime,this.radarPose());
+        if(t>0&&this.catchBlackHawk(p,previous,current,hawkSweep))continue;
         if(this.boardFarm(p,{...previous,rx:0,ry:footRadius},{...current,rx:0,ry:footRadius},ds))continue;
         if(t>=1){
           p.state=j.nextState;p.onRadar=p.state==='work'&&!!j.toAnchor;p.onFood=p.state==='eat'&&j.toAnchor?.facility==='food';
@@ -520,6 +771,7 @@ export class GameModel {
           else {p.state='eat';p.onFood=false;p.y=CONFIG.ground-halfHeight(p);this.emit('eat',{id:p.id});}
         }
       }else if(p.state==='eat'){
+        if(this.foodHealth!=null)eatingTime+=Math.min(ds,Math.max(0,(CONFIG.hungerMax-p.hunger)/CONFIG.foodRate));
         p.hunger=Math.min(CONFIG.hungerMax,p.hunger+CONFIG.foodRate*ds);
         if(p.hunger>=CONFIG.hungerMax){this.leaveFood(p,'toWork');this.emit('fed',{id:p.id,x:p.x});if(this.recallActive)this.goalShelter(p);}
       }else if(p.state==='toShelter'){
@@ -531,14 +783,19 @@ export class GameModel {
       if(!elapsed)continue;
       advanceBomblet(c,elapsed,this.reducedMotion);
       const q=bombletView(c,this.view),floor=CONFIG.ground*this.view.sy;
-      const contact=this.interceptSurface(bombletView(previous,this.view),q,ds);
+      const contact=this.interceptFallingBody(bombletView(previous,this.view),q,ds,'child');
       if(contact){c.x=previous.x+(c.x-previous.x)*contact.t;c.y=previous.y+(c.y-previous.y)*contact.t;this.sweepBomblet(c,previous);this.blastBomblet(c,contact);}
       else if(q.y+q.ry>=floor){c.y=(floor-q.ry)/this.view.sy;this.sweepBomblet(c,previous);this.blastBomblet(c);}
+      if(this.status==='ended')break;
       else this.sweepBomblet(c,previous);
     }
     this.bomblets=this.bomblets.filter(c=>!c.impacted);this.people=this.people.filter(p=>p.state!=='dead');
+    if(this.status==='ended')return;
     this.settleFarm(ds);
     this.stepNuclear();this.people=this.people.filter(p=>p.state!=='dead');
+    if(this.status==='ended')return;
+    this.stepBlackHawkSkill(ds);
+    this.repairFood(eatingTime,ds);
     if(this.remaining<=1e-8){this.remaining=0;this.status='ended';this.emit('end',{score:this.score,cuts:this.cuts,alive:this.alive});}
   }
   step(dt){
@@ -548,7 +805,8 @@ export class GameModel {
   }
   snapshot(){return {status:this.status,realTime:this.realTime,sceneTime:this.sceneTime,roundSeconds:this.roundSeconds,remaining:this.remaining,
     charge:this.charge,chargeMax:this.chargeMax,chargePercent:this.chargePercent,progression:this.progression,summonWaves:this.summonWaves,cuts:this.cuts,deaths:this.deaths,clicks:this.clicks,alive:this.alive,workers:this.workers,
-    sheltered:this.sheltered,capacity:null,score:this.score,bombPenalty:this.bombPenalty,bombExplosions:this.bombExplosions,timeScale:this.timeScale,
+    sheltered:this.sheltered,capacity:null,foodHealth:this.foodHealth,score:this.score,bombPenalty:this.bombPenalty,bombExplosions:this.bombExplosions,timeScale:this.timeScale,
     recallActive:this.recallActive,queued:this.recallQueue.length,levelId:this.levelId,shield:{...this.shieldState,circle:this.shieldGeometry()},cannon:this.cannonState,cannonBonus:this.cannonBonus,cannonKills:this.cannonKills,farm:this.farmState,farmBonus:this.farmBonus,volcano:this.volcanoState,nuclear:this.nuclearState,
+    scoreMeteorsEnabled:this.scoreMeteorsEnabled&&!this.blackHawkEnabled,scoreMeteorCuts:this.scoreMeteorCuts,scoreCutBonus:this.scoreCutBonus,scoreFragmentBonus:this.scoreFragmentBonus,scoreFocus:this.scoreFocus,scoreFragments:this.scoreFragments.map(f=>({...f})),
     meteors:this.meteors.map(m=>({...m})),bomblets:this.bomblets.map(c=>({...c})),people:this.people.map(p=>({...p}))};}
 }

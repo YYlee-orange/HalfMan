@@ -7,9 +7,10 @@ export const LEVEL_FEATURES=Object.freeze({
   'man-3':agriculture,
   'man-4':Object.freeze({...agriculture,volcano:true}),
   'man-5':Object.freeze({...agriculture,volcano:true,nuclear:true}),
+  'man-6':Object.freeze({...defense,volcano:true,nuclear:true,blackHawk:true}),
 });
 export const AVAILABLE_LEVEL_COUNT=Object.keys(LEVEL_FEATURES).length;
 export const levelFeatures=id=>LEVEL_FEATURES[id]??basic;
 export const DEFAULT_ROUND_SECONDS=180;
-export const LEVEL_ROUND_SECONDS=Object.freeze({'man-5':300});
+export const LEVEL_ROUND_SECONDS=Object.freeze({'man-5':300,'man-6':Infinity});
 export const levelRoundSeconds=id=>LEVEL_ROUND_SECONDS[id]??DEFAULT_ROUND_SECONDS;

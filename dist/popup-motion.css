@@ -18,3 +18,14 @@
   #game-menu,#results,#cut-tuner,#game-menu::backdrop,.results-backdrop{transition-duration:.001s;translate:none}
   @starting-style{#game-menu[open],#results:not([hidden]),#cut-tuner:not([hidden]){translate:none}}
 }
+@media(prefers-reduced-motion:no-preference){
+  #overlay:has(> #results[data-outcome=win]) .results-backdrop:not([hidden]){
+    transition-duration:.58s;
+    transition-timing-function:cubic-bezier(.4,0,.25,1);
+  }
+  #results[data-outcome=win]:not([hidden]){
+    transition-duration:.50s;
+    transition-timing-function:cubic-bezier(.22,.65,.3,1);
+  }
+  @starting-style{#results[data-outcome=win]:not([hidden]){translate:0 18px}}
+}

@@ -10,7 +10,7 @@ export function viewMetrics(width=1440,height=810){
   return{width,height,sx,sy,art:Math.max(.34,Math.min(sx,sy)),character:Math.max(.70,Math.min(sx,sy))};
 }
 export function meteorView(m,v){
-  const ratio=m.ratio??variantOf(m.variantId).ratio,a=m.tilt||0,size=m.size*v.character;
+  const ratio=m.ratio??variantOf(m.variantId).ratio,a=m.tilt||0,size=m.size*v.character*(m.bodyScale??1);
   return{x:m.x*v.sx,y:m.y*v.sy+m.size*.5*(v.sy-v.character),
     rx:size*(Math.abs(Math.cos(a))*ratio+Math.abs(Math.sin(a)))*.5,
     ry:size*(Math.abs(Math.sin(a))*ratio+Math.abs(Math.cos(a)))*.5};
@@ -22,6 +22,7 @@ export function facilityFootView(anchor,v,ground,sceneTime,pose){return anchor.f
 export function personView(p,v,ground,sceneTime,pose={press:0,release:0,scan:0,antenna:0}){
   const half=halfHeight(p),age=personAge(p,sceneTime),birth=1-(1-clamp(age/.27))**3;
   let point={x:p.x*v.sx,y:p.y*v.sy};
+  if(p.state==='hawkMounted')return{...point,rx:p.size*v.character*p.hawkLink.scale*.58,ry:half*v.character*p.hawkLink.scale};
   if(onFarm(p)){point=farmFoot(p,v,sceneTime,pose.reduced);point.y-=half*v.character;}
   else if(p.state==='work'&&p.onRadar){point=radarFootView(p.workAnchor,v,ground,pose);point.y-=half*v.character;}
   else if(p.state==='eat'&&p.onFood){point=foodScreenPoint(p.foodAnchor,v,ground,sceneTime,!pose.reduced);point.y-=half*v.character;}

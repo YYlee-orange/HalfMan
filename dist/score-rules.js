@@ -4,6 +4,7 @@ export function scoreTotal({cuts,alive,penalty,bonus=0},rules=SCORE_RULES){
   return Math.max(0,cuts*rules.cutPoints+alive*rules.survivorPoints+bonus-penalty);
 }
 export function scoreSource(kind,rules=SCORE_RULES,value=0){
+  if(kind==='scoreMeteorCut'||kind==='scoreFragment')return{key:kind,label:kind==='scoreMeteorCut'?'连切分数陨石':'分数碎片',count:1,tone:'gain',emphasis:'normal',components:[{key:kind,label:kind==='scoreMeteorCut'?'连切':'落地',value}]};
   if(kind==='farm')return{key:'farm',label:'农场收成',count:1,tone:'gain',emphasis:'normal',components:[{key:'farm',label:'收成',value}]};
   if(kind==='cannonMan'||kind==='cannonBomb')return{key:kind,label:kind==='cannonMan'?'炮击「曼」':'炮击「慢！」',count:1,tone:'gain',emphasis:'normal',components:[{key:'cannon',label:'击落',value}]};
   if(kind==='cut')return{key:'cut',label:'切开「曼」',count:1,tone:'gain',emphasis:'normal',components:[

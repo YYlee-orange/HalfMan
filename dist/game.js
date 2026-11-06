@@ -1,10 +1,13 @@
 import { GameModel, CONFIG, meteorFallTime } from './engine.js';
 import {BackgroundSky,drawBackground} from './background.js';
 import {OpeningScene,OpeningRenderer} from './opening-scene.js';
-import {SceneTransition,SceneTransitionRenderer} from './scene-transition.js';
+import {SceneTransition,SceneTransitionRenderer,drawTransitionBackdrop} from './scene-transition.js';
+import {GameCredits} from './game-credits.js';
 import {LEVELS,LevelSelectScene,drawLevelMap,drawLevelFlames} from './level-select.js';
 import {installLevelDrag} from './level-drag.js';
 import {drawRiceMark} from './food-mark.js';
+import {FoodEffects,clipFoodDamage,drawFoodCracks,foodBreakDelay} from './food-art.js';
+import {foodDamageStage} from './food-health.js';
 import {PencilHint,PencilHintRenderer,pencilHintLayout} from './pencil-hint.js';
 import {CUT_DRAWING,cutHintLayout} from './cut-hint.js';
 import {TutorialFeedback,PRAISE_DRAWING,BOMB_DRAWING,feedbackHintLayout} from './tutorial-feedback.js';
@@ -32,6 +35,9 @@ import {ShieldControl} from './shield-control.js';
 import {CANNON,cannonGeometry,cannonRecoil} from './cannon.js';
 import {drawCannon,drawCannonReticle,drawCannonHeat,drawCannonBullet,makeCannonDebris,drawCannonDebris} from './cannon-art.js';
 import {CannonCoolingHUD} from './cannon-ui.js';
+import {drawLaserBeams} from './laser-art.js';
+import {installWeaponChoice,weaponName} from './weapon-choice.js';
+import {drawScoreMeteor,drawScoreFragment,ScoreMeteorEffects} from './score-meteor-art.js';
 import {RoundEnding} from './round-ending.js';
 import {FarmMotion,farmGeometry} from './farm.js';
 import {drawFarm} from './farm-art.js';
@@ -42,12 +48,22 @@ import {NUCLEAR_GUIDANCE,NuclearWarning,NUCLEAR_WARNING_DRAWING,nuclearWarningLa
 import {NUCLEAR_RULES} from './nuclear.js';
 import {NuclearEffects,drawNuclearBomb,drawNuclearIcon,nuclearIconFrame} from './nuclear-art.js';
 import {NuclearHUD} from './nuclear-hud.js';
+import {drawBlackHawk,blackHawkMounts} from './black-hawk-art.js';
+import {BlackHawkEffects} from './black-hawk-effects.js';
+import {drawElbowArm,elbowFrame} from './black-hawk-elbow.js';
+import {BLACK_HAWK_MAX_HEALTH} from './black-hawk-combat.js';
+import {BLACK_HAWK_ENTRY_DURATION} from './black-hawk-flight.js';
+import {BLACK_MAMBA_GUIDANCE} from './black-mamba-guidance.js';
 const $=id=>document.getElementById(id);
 const canvas=$('scene'),ctx=canvas.getContext('2d',{alpha:false});
 const gameContext=ctx,openingCanvas=$('opening-scene'),openingContext=openingCanvas.getContext('2d');
 const transitionCanvas=$('scene-transition'),transitionContext=transitionCanvas.getContext('2d');
 const nuclearCanvas=$('nuclear-layer'),nuclearContext=nuclearCanvas.getContext('2d');
+const focusBuffer=document.createElement('canvas'),focusContext=focusBuffer.getContext('2d',{alpha:false});
+const scoreMeteorEffects=new ScoreMeteorEffects();
 const model=new GameModel();
+const blackHawkEffects=new BlackHawkEffects();
+const foodEffects=new FoodEffects();
 const roundEnding=new RoundEnding();
 const farmMotion=new FarmMotion();
 const farmFeedback=new FarmFeedback();
@@ -77,12 +93,16 @@ for(const level of LEVELS){
 }
 const sceneTransition=new SceneTransition(),sceneTransitionRenderer=new SceneTransitionRenderer();
 const levelDrag=installLevelDrag($('level-select'),$('level-map'),()=>route==='levels'&&opening.mode==='game'&&!sceneTransition.active&&!levelScene.paused);
-let transitionSky=new BackgroundSky();
+let transitionSky=new BackgroundSky(),creditsSky=null;
+const credits=new GameCredits($('credits'),$('credits-audio'),returnToStart);
 const radarHint=new PencilHint(),radarHintRenderer=new PencilHintRenderer();
 const cutHint=new PencilHint(CUT_DRAWING),cutHintRenderer=new PencilHintRenderer(undefined,CUT_DRAWING);
 const tutorialFeedback=new TutorialFeedback(cutHint),praiseRenderer=new PencilHintRenderer(undefined,PRAISE_DRAWING),bombHintRenderer=new PencilHintRenderer(undefined,BOMB_DRAWING);
 const chapterGuidance=new ChapterGuidance();let chapterRenderer=null;
-const mechanismGuidance=new MechanismGuidance({...FARM_GUIDANCE,...NUCLEAR_GUIDANCE});let mechanismRenderer=null;
+const mechanismGuidance=new MechanismGuidance({...FARM_GUIDANCE,...NUCLEAR_GUIDANCE,...BLACK_MAMBA_GUIDANCE});let mechanismRenderer=null;
+let bossIntroPending=false;
+const BOSS_HEALTH_INTRO={start:BLACK_HAWK_ENTRY_DURATION+.15,slide:.56,fillAt:BLACK_HAWK_ENTRY_DURATION+.87,fill:2.2};
+const REDUCED_BOSS_HEALTH_INTRO={start:.68,slide:.30,fillAt:1.15,fill:1.45};
 let tutorialIntroPending=false,earlyTutorial={summoned:false,normal:false,cut:false,bomb:false};
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -95,7 +115,7 @@ let dark=matchMedia('(prefers-color-scheme: dark)').matches;
 const motionPreference=matchMedia('(prefers-reduced-motion: reduce)');
 let reduced=motionPreference.matches;
 let ink='#292d2b',paper='#f7f8f5',muted='#646d66',line='#d9dfd8';
-let trail=[],bladeActive=false,lastPoint=null,lastPointerStamp=0;
+let trail=[],bladeActive=false,lastPoint=null,lastPointerStamp=0,bladeStrokeId=0;
 const flames=new FlameTracks();let bursts=[];
 const cutFeedback=new CutFeedback();
 const scoreHud=new ScoreHUD($('score-panel'),CUT);
@@ -105,6 +125,7 @@ let impactShake={time:-10,amplitude:0};
 let pauseReason='',lastFrame=performance.now(),hudStamp=-1;
 let radarLayoutKey='';
 let qaHeld=false;
+const weaponChoice=installWeaponChoice({button:$('weapon-button'),dialog:$('weapon-menu'),onChange:type=>model.setWeapon(type),onScoreChange:enabled=>model.setScoreMeteors(enabled),onPause:value=>{opening.paused=value||document.hidden;}});
 let camera={z:1,fx:0,fy:0,dx:0,dy:0};
 const keys=new Set();let keyboardPoint={x:500,y:250},keyboardVisible=false;
 const screenBase=(x,y)=>({x:x/CONFIG.width*width,y:y/CONFIG.height*height});
@@ -112,6 +133,8 @@ const artScale=()=>Math.max(.34,Math.min(width/CONFIG.width,height/CONFIG.height
 const charScale=()=>Math.max(.70,Math.min(width/CONFIG.width,height/CONFIG.height));
 function project(x,y){const p=screenBase(x,y);return{x:camera.fx+(p.x-camera.fx)*camera.z+camera.dx,y:camera.fy+(p.y-camera.fy)*camera.z+camera.dy};}
 function cameraPoint(p){return{x:camera.fx+(p.x-camera.fx)*camera.z+camera.dx,y:camera.fy+(p.y-camera.fy)*camera.z+camera.dy};}
+function canvasToScene(p){return{x:camera.fx+(p.x-camera.dx-camera.fx)/camera.z,y:camera.fy+(p.y-camera.dy-camera.fy)/camera.z};}
+function aimCannonAt(p){const q=canvasToScene(p);model.aimCannon(q.x,q.y);}
 function meteorPoint(m){const p=meteorView(m,model.view);return{...cameraPoint(p),rx:p.rx*camera.z,ry:p.ry*camera.z};}
 function glyphColor(tone=0){return GRAYS[dark?'dark':'light'][tone]||GRAYS.light[0];}
 function radarPose(){
@@ -123,12 +146,28 @@ function radarFoot(anchor){
   return{x:base.x+q.x*s,y:base.y+q.y*s};
 }
 function cameraAt(){
-  let z=1,fx=width*.5,fy=height*.5;
-  const time=effectTime(),cut=cutCameraOffset(model.cutCue,time,artScale(),reduced);
+  const focus=model.scoreFocus;
+  let z=focus.zoom,fx=width*.5,fy=height*.5;
+  const time=effectTime(),cut=cutCameraOffset(model.cutCue,time,artScale()*(model.scoreFrenzy?z:1),reduced);
   let dx=cut.x,dy=cut.y;const a=time-shakeStart;
   if(!reduced&&a>=0&&a<.12){const env=(1-a/.12)**2,lx=Math.sin(a*150)*.5*env,ly=Math.sin(a*95+1)*1.5*env;if(Math.hypot(lx,ly)>Math.hypot(dx,dy)){dx=lx;dy=ly;}}
   if(!reduced){const impact=impactShakeAt(time-impactShake.time,impactShake.amplitude,impactShake.duration??CONFIG.impactDuration);if(impact.envelope>1.5){dx=impact.dx;dy=impact.dy;}}
-  const recoil=cannonRecoil(model.cannon,time,reduced);dx+=recoil.x;dy+=recoil.y;
+  const recoil=cannonRecoil(model.cannon,time,reduced),kick=model.blackHawk?.staggeredAt!=null?2.6:1;dx+=recoil.x*kick;dy+=recoil.y*kick;
+  if(focus.strength>0&&focus.cue){
+    const p=meteorView({...focus.cue,ratio:1,tilt:0},model.view);fx=p.x;fy=p.y;z=focus.zoom;
+    if(!reduced){dx+=(width*.5-fx)*focus.strength*.82;dy+=(height*.43-fy)*focus.strength*.82;}
+  }
+  const scoreShake=scoreMeteorEffects.shakeAt(time,reduced),shakeScale=width<600?.75:1;dx+=scoreShake.dx*shakeScale;dy+=scoreShake.dy*shakeScale;
+  if(model.blackHawk){
+    const response=model.blackHawk.camera(effectSceneTime(),model.view,reduced);
+    if(response.zoom>1){const frame=model.blackHawkState;z=response.zoom;fx=frame.x;fy=frame.y;}
+    const crash=blackHawkEffects.crashShakeAt(effectSceneTime(),reduced,artScale());
+    if(crash){dx=crash.x;dy=crash.y;}
+    else{
+      const shake=blackHawkEffects.shakeAt(effectSceneTime(),reduced);
+      dx+=response.dx+shake.x;dy+=response.dy+shake.y;
+    }
+  }
   camera={z,fx,fy,dx,dy};
 }
 function theme(){
@@ -148,6 +187,7 @@ function motionState(){
 function resize(){
   const r=canvas.getBoundingClientRect();width=r.width;height=r.height;dpr=Math.min(devicePixelRatio||1,2);
   canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
+  focusBuffer.width=focusBuffer.height=1;
   openingCanvas.width=canvas.width;openingCanvas.height=canvas.height;
   transitionCanvas.width=canvas.width;transitionCanvas.height=canvas.height;
   nuclearCanvas.width=canvas.width;nuclearCanvas.height=canvas.height;
@@ -185,9 +225,13 @@ function drawShelter(options={}){
   ctx.restore();
 }
 function drawFood(front=false,options={}){
+  const health=options.context?null:model.foodHealth;
+  if(health===0)return;
+  const stage=health===null?0:foodDamageStage(health);
   const ctx=options.context??gameContext,p=options.point??project(CONFIG.foodX,CONFIG.ground),s=options.scale??artScale()*camera.z,e=options.exit??{dx:0,dy:0,sx:1,sy:1};
   const breathe=foodIdle(options.time??buildingTime(),!reduced);
   ctx.save();ctx.translate(p.x+e.dx,p.y+e.dy);ctx.scale(s*(1+breathe)*e.sx,s*(1-breathe)*e.sy);
+  if(stage)clipFoodDamage(ctx,stage);
   if(!front){
     ctx.fillStyle=palette.green;ctx.beginPath();ctx.ellipse(0,-58,78,22,0,0,Math.PI*2);ctx.fill();
     ctx.fillStyle=palette.greenSide;ctx.beginPath();ctx.ellipse(0,-58,66,15,0,0,Math.PI*2);ctx.fill();
@@ -196,6 +240,7 @@ function drawFood(front=false,options={}){
     ctx.fillStyle=palette.green;ctx.beginPath();ctx.moveTo(-78,-58);ctx.bezierCurveTo(-76,-9,-69,0,-3,0);ctx.bezierCurveTo(61,0,71,-11,78,-58);ctx.bezierCurveTo(42,-36,-43,-35,-78,-58);ctx.closePath();ctx.fill();
     ctx.fillStyle=palette.greenSide;ctx.beginPath();ctx.moveTo(49,-41);ctx.bezierCurveTo(48,-18,45,-7,38,-2);ctx.bezierCurveTo(64,-6,71,-17,78,-58);ctx.bezierCurveTo(68,-50,61,-45,49,-41);ctx.closePath();ctx.fill();
     ctx.strokeStyle=palette.green;ctx.lineWidth=10;ctx.beginPath();ctx.ellipse(0,-58,72,17,0,0,Math.PI);ctx.stroke();
+    if(stage)drawFoodCracks(ctx,stage,palette.greenSide);
     drawRiceMark(ctx,palette.greenSide);
   }
   ctx.restore();
@@ -225,7 +270,12 @@ function drawPerson(p){
   const phase=model.sceneTime*Math.PI*2/1.05+p.phase;
   const moving=['toWork','toFood','toShelter','farmExit'].includes(p.state);
   let point=cameraPoint(personView(p,model.view,CONFIG.ground,model.sceneTime,radarPose()));
+  if(p.state==='hawkMounted'){
+    drawHalf(p.part,point.x,point.y,p.size*s*p.hawkLink.scale,part.rotation-p.hawkLink.angle,1,1,0,variant.fontId,variant.tone,halfFlip(p.part,1,reduced));
+    return;
+  }
   if(!reduced){
+    if(p.state==='fall'&&p.elbowLaunchAt!==undefined)angle-=Math.PI*2*ease((model.sceneTime-p.elbowLaunchAt)/1.1);
     if(moving){lean=Math.sin(phase)*.20+(p.direction||1)*.10;sx=1+Math.sin(phase)*.09;sy=1/sx;point.y-=Math.abs(Math.sin(phase))*5*s;}
     if(p.state==='work'||p.state==='farm'){lean=.13+Math.sin(phase*1.2)*.18;sy=1-Math.max(0,Math.sin(phase*1.2))*.11;sx=1/sy;}
     if(p.state==='eat'){lean=Math.sin(phase*1.4)*.13;sy=1-Math.max(0,Math.sin(phase*1.4))*.10;}
@@ -245,15 +295,21 @@ function drawPerson(p){
   }
   ctx.restore();
 }
-function drawMeteors(){
+function drawMeteors(foreground=false){
   for(const m of model.meteors){
+    const focused=m.kind==='score'&&!!m.frenzy;if(focused!==foreground)continue;
     const p=meteorPoint(m);
-    if(m.kind==='bomb'){
+    if(m.kind==='score'){
+      const size=m.size*(m.bodyScale??1)*charScale()*camera.z;
+      drawScoreMeteor(ctx,m,p,size,model.realTime,reduced,ink);
+      if(foreground)scoreMeteorEffects.drawCombo(ctx,m,p,size,model.realTime,model.view,reduced);
+    }
+    else if(m.kind==='bomb'){
       const charge=bombChargeAt(m,model.realTime);
       drawBombOutline(bombPath,p.x,p.y,m.size*charScale()*camera.z,m.tilt,null,charge&&!reduced?(1-charge.expand*.8)*(1-charge.contract):1);
       drawBombCharge(ctx,m,model.realTime,p,artScale()*camera.z,dark,reduced);
     }else drawMaster(p.x,p.y,m.size*charScale()*camera.z,m.tilt,m.fontId,m.tone);
-    if(m.arm||m.source==='volcano'&&m.fallStartedAt==null)continue;
+    if(m.kind==='score'||m.arm||m.source==='volcano'&&m.fallStartedAt==null)continue;
     const left=meteorFallTime(Math.max(0,CONFIG.ground-m.y-m.size/2),m.vy,m.gravity??CUT.meteorGravity);
     if(left<.8){
       const ground=project(m.x+m.vx*left,CONFIG.ground),rx=CONFIG.impactRadius*width/CONFIG.width*camera.z;
@@ -366,30 +422,63 @@ function renderSceneTransition(){
   transitionContext.setTransform(dpr,0,0,dpr,0,0);
   sceneTransitionRenderer.draw(transitionContext,frame,{width,height,dpr,sky:transitionSky,glyph,path:glyphPath});
 }
-function clearNuclearLayer(){
+function clearOverheadEffects(){
   nuclearContext.setTransform(1,0,0,1,0,0);nuclearContext.clearRect(0,0,nuclearCanvas.width,nuclearCanvas.height);
   nuclearCanvas.hidden=true;
 }
-function renderNuclearLayer(){
-  const state=model.nuclearState,visible=route==='game'&&(state.bomb||nuclearEffects.blasts.length||nuclearIconFrame(state,model.view,reduced));
-  if(!visible){clearNuclearLayer();return;}
+function renderOverheadEffects(hawk){
+  const state=model.nuclearState,time=effectSceneTime(),crash=hawk?.destroyed&&blackHawkEffects.crashImpactActive(time);
+  const visible=route==='game'&&(crash||state.bomb||nuclearEffects.blasts.length||nuclearIconFrame(state,model.view,reduced));
+  if(!visible){clearOverheadEffects();return;}
   nuclearCanvas.hidden=false;nuclearContext.setTransform(dpr,0,0,dpr,0,0);nuclearContext.clearRect(0,0,width,height);
-  drawNuclearBomb(nuclearContext,state,model.view,project);nuclearEffects.draw(nuclearContext,effectSceneTime(),model.view,project,reduced);drawNuclearIcon(nuclearContext,state,model.realTime,model.view,reduced);
-  const flash=nuclearEffects.flash(effectSceneTime(),reduced);if(flash>0){nuclearContext.save();nuclearContext.globalAlpha=flash;nuclearContext.fillStyle='#fff';nuclearContext.fillRect(0,0,width,height);nuclearContext.restore();}
+  drawNuclearBomb(nuclearContext,state,model.view,project,state.reason==='blackHawk'?camera.z:1);
+  nuclearEffects.draw(nuclearContext,time,model.view,project,reduced);if(!scoreFrenzyUIHidden())drawNuclearIcon(nuclearContext,state,model.realTime,model.view,reduced);
+  if(crash)blackHawkEffects.drawCrashImpact(nuclearContext,time,project,model.view,Math.max(.52,artScale())*camera.z,hawk.scale*camera.z,reduced,dark);
+  const flash=nuclearEffects.flash(time,reduced);if(flash>0){nuclearContext.save();nuclearContext.globalAlpha=flash;nuclearContext.fillStyle='#fff';nuclearContext.fillRect(0,0,width,height);nuclearContext.restore();}
+}
+function scoreFrenzyUIHidden(){return route==='game'&&!sceneTransition.active&&roundEnding.phase==='idle'&&!!(model.scoreFrenzy||model.scoreFocus.strength>.02);}
+function renderBossHealth(frame,intro){
+  const root=$('boss-health'),age=model.sceneTime-intro.start;
+  root.hidden=!frame||age<=0;
+  if(root.hidden)return;
+  const slide=ease(age/intro.slide),fillAge=model.sceneTime-intro.fillAt;
+  const t=clamp(fillAge/intro.fill,0,1),fill=t*t*(3-2*t);
+  const heading=$('boss-health-heading'),track=$('boss-health-track'),ratio=frame.health/BLACK_HAWK_MAX_HEALTH;
+  heading.style.opacity=String(slide);
+  heading.style.translate=reduced||slide===1?'none':'0 '+(-60*(1-slide))+'px';
+  track.hidden=fillAge<0;
+  root.toggleAttribute('data-damage-motion',fill===1&&ratio<1);
+  const percent=fill<1?Math.floor(ratio*fill*100):Math.max(frame.health>0?1:0,Math.round(ratio*100));
+  $('boss-health-value').textContent=`${percent}%`;
+  track.setAttribute('aria-valuenow',String(percent));
+  $('boss-health-fill').style.transform=`scaleX(${ratio*fill})`;
+  $('boss-health-loss').style.transform=`scaleX(${frame.trailHealth/BLACK_HAWK_MAX_HEALTH*fill})`;
 }
 function render(){
+  if(route==='credits'){
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    drawTransitionBackdrop(ctx,creditsSky,{width,height,dark:!dark,reduced});
+    renderOpening();renderSceneTransition();return;
+  }
+  const focusUI=scoreFrenzyUIHidden(),field=document.querySelector('.playfield');field.dataset.scoreFrenzy=String(focusUI);document.documentElement.dataset.scoreFrenzy=String(focusUI);
   updateRadarControls();
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=paper;ctx.fillRect(0,0,width,height);cameraAt();
+  const hawk=route==='game'?model.blackHawkState:null,healthIntro=reduced?REDUCED_BOSS_HEALTH_INTRO:BOSS_HEALTH_INTRO;
+  renderBossHealth(hawk,healthIntro);
   const showLevels=route==='levels'||opening.mode==='transition';$('level-select').hidden=!showLevels;
   updateShieldControl();
   updateCannonControls();
-  if(showLevels){renderLevelSelect();renderOpening();renderSceneTransition();renderNuclearLayer();return;}
+  if(showLevels){renderLevelSelect();renderOpening();renderSceneTransition();renderOverheadEffects(hawk);return;}
   drawBackground(ctx,sky,{width,height,dark,reduced});
   const volcano=model.volcanoState;
   if(volcano.enabled)volcanoRenderer.draw(ctx,{...volcano,geometry:{...volcano.geometry,...cameraPoint(volcano.geometry),scale:volcano.geometry.scale*camera.z}},dark);
   volcanoSplash.draw(ctx,effectSceneTime(),project,{art:artScale()*camera.z});
+  if(bossIntroPending&&model.status==='playing'&&model.sceneTime>=healthIntro.fillAt+healthIntro.fill){
+    bossIntroPending=false;startRoundGuidance();
+  }
   advanceTutorialIntro();
   const nuclear=model.nuclearState,nuclearHint=nuclearWarning.snapshot(model.realTime,reduced),nuclearNotice=['writing','shown','erasing'].includes(nuclearHint.stage);
+  if(!focusUI){
   if(chapterGuidance.drawing&&!nuclearNotice){
     if(chapterRenderer?.drawing!==chapterGuidance.drawing)chapterRenderer=new PencilHintRenderer(undefined,chapterGuidance.drawing);
     chapterRenderer.draw(ctx,chapterGuidance.snapshot(model.realTime,reduced),chapterHintLayout(model.view,chapterGuidance.drawing),dark);
@@ -405,17 +494,33 @@ function render(){
   if(hints.active==='praise')praiseRenderer.draw(ctx,hints.praise,feedbackHintLayout(model.view,PRAISE_DRAWING),dark);
   if(hints.active==='warning')bombHintRenderer.draw(ctx,hints.warning,feedbackHintLayout(model.view,BOMB_DRAWING),dark);
   nuclearWarningRenderer.draw(ctx,nuclearHint,nuclearWarningLayout(model.view),dark);
+  }
   const a=project(0,CONFIG.ground),b=project(CONFIG.width,CONFIG.ground);
   ctx.strokeStyle=ink;ctx.lineWidth=1.1;ctx.beginPath();ctx.moveTo(a.x,a.y+.5);ctx.lineTo(b.x,b.y+.5);ctx.stroke();
   drawShelter();drawFood(false);drawFood(true);drawRadar();
   const farm=farmFrame(true),farmArt=farm.enabled?{...farm,geometry:{...farm.geometry,...cameraPoint(farm.geometry),scale:farm.geometry.scale*camera.z}}:null;
   if(farmArt)drawFarm(ctx,farmArt,'back');
   if(model.cannon.enabled){const g=cannonGeometry(model.view,CONFIG.ground),p=cameraPoint(g);drawCannon(ctx,model.cannonState,{...g,x:p.x,y:p.y,scale:g.scale*camera.z},model.realTime,reduced);}
+  if(hawk&&!hawk.destroyed){
+    for(const {frame,opacity} of model.blackHawk.ghosts(model.sceneTime,model.view,reduced)){
+      drawBlackHawk(ctx,{...frame,...cameraPoint(frame),scale:frame.scale*camera.z},dark,opacity);
+    }
+    const opacity=reduced&&hawk.mode==='entry'?ease(model.sceneTime/.52):1;
+    if(opacity>0)drawBlackHawk(ctx,{...hawk,...cameraPoint(hawk),scale:hawk.scale*camera.z},dark,opacity);
+  }else if(hawk){
+    const crash=blackHawkEffects.crashFrame(effectSceneTime(),model.view,hawk.scale);
+    if(crash)drawBlackHawk(ctx,{...crash,...cameraPoint(crash),scale:crash.scale*camera.z},dark);
+  }
   if(roundEnding.phase==='idle')flames.sync(model);
-  for(const flame of flames.trails.values())if(!(flame.volcanic&&flame.kind==='meteor'))drawPlume(ctx,flame,effectSceneTime(),project,{...model.view,art:artScale()*camera.z,character:charScale()*camera.z,reduced});
-  if(glyph)for(const p of model.people)if(p.state!=='sheltered'&&p.state!=='cannon')drawPerson(p);
+  const sharpIds=new Set(model.meteors.filter(m=>m.kind==='score'&&m.frenzy).map(m=>m.id));
+  for(const flame of flames.trails.values())if(flame.kind!=='scoreFragment'&&!sharpIds.has(flame.id)&&!(flame.volcanic&&flame.kind==='meteor'))drawPlume(ctx,flame,effectSceneTime(),project,{...model.view,art:artScale()*camera.z,character:charScale()*camera.z,reduced});
+  if(glyph)for(const p of model.people)if(p.state!=='sheltered'&&p.state!=='cannon'&&!(hawk?.destroyed&&p.state==='hawkMounted'))drawPerson(p);
+  if(hawk?.skillKind==='elbow'){
+    const arm=elbowFrame(hawk.skillAge,model.view,CONFIG.ground,model.radarScale);
+    drawElbowArm(ctx,{...arm,...cameraPoint(arm),scale:arm.scale*camera.z});
+  }
   if(farmArt)drawFarm(ctx,farmArt,'front');
-  for(const flame of flames.trails.values())if(flame.volcanic&&flame.kind==='meteor')drawPlume(ctx,flame,effectSceneTime(),project,{...model.view,art:artScale()*camera.z,character:charScale()*camera.z,reduced});
+  for(const flame of flames.trails.values())if(!sharpIds.has(flame.id)&&flame.volcanic&&flame.kind==='meteor')drawPlume(ctx,flame,effectSceneTime(),project,{...model.view,art:artScale()*camera.z,character:charScale()*camera.z,reduced});
   if(glyph){drawMeteors();drawBomblets();}
   if(model.cannon.enabled)for(const b of model.cannon.bullets)drawCannonBullet(ctx,b,project,{...model.view,art:model.view.art*camera.z});
   if(model.shield.enabled){
@@ -423,14 +528,34 @@ function render(){
     drawShield(ctx,model.shieldState,{dome:{...center,radius:sphere.radius*camera.z},unit:model.view.art*camera.z});
   }
   drawEffects();
+  foodEffects.draw(ctx,effectSceneTime(),project,artScale()*camera.z,CONFIG.ground,palette,reduced);
+  if(model.cannon.weapon==='laser')drawLaserBeams(ctx,model.cannonState,model.realTime,project,{...model.view,art:model.view.art*camera.z},reduced);
+  if(hawk){
+    const frame={...hawk,...cameraPoint(hawk),scale:hawk.scale*camera.z};
+    blackHawkEffects.draw(ctx,effectSceneTime(),project,Math.max(.52,artScale())*camera.z,frame,reduced);
+  }
   if(farmArt)farmFeedback.draw(ctx,farmArt.geometry,effectSceneTime(),reduced,dark);
+  const focus=model.scoreFocus;
+  if(focus.blur>.01){
+    if(focusBuffer.width!==canvas.width||focusBuffer.height!==canvas.height){focusBuffer.width=canvas.width;focusBuffer.height=canvas.height;}
+    focusContext.setTransform(1,0,0,1,0,0);focusContext.drawImage(canvas,0,0);
+    ctx.save();ctx.fillStyle=paper;ctx.fillRect(0,0,width,height);ctx.filter=`blur(${focus.blur}px)`;ctx.drawImage(focusBuffer,0,0,width,height);ctx.restore();
+    ctx.save();ctx.fillStyle=paper;ctx.globalAlpha=focus.strength*.13;ctx.fillRect(0,0,width,height);ctx.restore();
+  }
+  for(const flame of flames.trails.values()){
+    const active=model.meteors.find(m=>m.id===flame.id&&sharpIds.has(m.id)),fade=active?1-clamp((model.realTime-active.frenzy.startedAt)/.2,0,1):1;
+    if(flame.kind==='scoreFragment'||active&&fade>0)drawPlume(ctx,{...flame,opacity:(flame.opacity??1)*fade},effectSceneTime(),project,{...model.view,art:artScale()*camera.z,character:charScale()*camera.z,reduced});
+  }
+  drawMeteors(true);
+  for(const f of model.scoreFragments)drawScoreFragment(ctx,f,{...model.view,zoom:camera.z,time:reduced?0:model.realTime},project);
+  scoreMeteorEffects.draw(ctx,effectTime(),project,{...model.view,art:artScale(),zoom:camera.z},reduced,dark);
   drawTrail();
-  if(model.cannon.enabled&&model.status!=='ended')drawCannonReticle(ctx,model.cannonState,project(model.cannon.aim.x,model.cannon.aim.y),reduced,ink);
-  if(keyboardVisible&&model.status==='playing'){
+  if(!focusUI&&model.cannon.enabled&&model.status!=='ended')drawCannonReticle(ctx,model.cannonState,project(model.cannon.aim.x,model.cannon.aim.y),reduced,ink);
+  if(!focusUI&&keyboardVisible&&model.status==='playing'){
     ctx.strokeStyle=ink;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(keyboardPoint.x-5,keyboardPoint.y);ctx.lineTo(keyboardPoint.x+5,keyboardPoint.y);ctx.moveTo(keyboardPoint.x,keyboardPoint.y-5);ctx.lineTo(keyboardPoint.x,keyboardPoint.y+5);ctx.stroke();
   }
   nuclearHud.render(nuclear,model.realTime,reduced,route==='game'&&model.status!=='ended');
-  scoreHud.render(reduced);renderOpening();renderSceneTransition();renderNuclearLayer();
+  scoreHud.render(reduced);renderOpening();renderSceneTransition();renderOverheadEffects(hawk);
 }
 function radarHintLayout(){
   const p=radarFootView({type:'antenna',x:-12,y:-76},model.view,CONFIG.ground,{press:0,release:0,scan:0,antenna:0,scale:model.radarScale});
@@ -448,14 +573,22 @@ function advanceTutorialIntro(){
 }
 function handleEvents(){
   for(const e of model.drainEvents()){
+    scoreMeteorEffects.event(e);
+    blackHawkEffects.event(e);
+    foodEffects.event(e);
+    if(e.type==='foodDestroyed'){
+      const amplitude=36*(width<600?.7:1),previous=impactShakeAt(e.time-impactShake.time,impactShake.amplitude,impactShake.duration??CONFIG.impactDuration);
+      if(amplitude>=previous.envelope)impactShake={time:e.time,amplitude,duration:.55};
+    }
+    if(e.type==='nuclearBlast')scoreMeteorEffects.clear();
     if(e.type==='scoreChange')scoreHud.receive(e);
     if(e.type==='farmHarvest')farmFeedback.add(e);
     if(e.type==='volcanoErupt')volcanoSplash.add(e);
-    if(e.type==='nuclearWarning'){nuclearWarning.start(e.time,reduced);announce(`注意！核弹来袭，${NUCLEAR_RULES.warning}秒后落下，请让小人进入防空洞。`);}
+    if(e.type==='nuclearWarning'){nuclearWarning.start(e.time,reduced);announce(`注意！核弹来袭，${Math.round(e.countdownAt-e.warningAt)}秒后投放，请让小人进入防空洞。`);}
     if(e.type==='nuclearLaunch'){nuclearWarning.clear();announce('核弹正在坠落。');}
     if(e.type==='nuclearBlast'){nuclearEffects.add(e);impactShake={time:e.time,amplitude:NUCLEAR_RULES.shake*(width<600?.8:1),duration:NUCLEAR_RULES.shakeDuration};announce('核弹爆炸，只有防空洞内的小人幸存。');}
     if(e.type==='shieldActivate')announce('雷达护盾已开启，罩内小人受到保护。');
-    if(e.type==='cannonMode')announce(e.aiming?'防空炮持续征召，按住画面瞄准射击，雷达和农场工作者不参与。':'退出瞄准，炮内小人继续留岗并消耗饥饿，饿了再去吃饭。');
+    if(e.type==='cannonMode')announce(e.aiming?`${weaponName(model.weaponType)}持续征召，按住画面${model.weaponType==='laser'?'蓄力发射激光':'瞄准射击'}，雷达和农场工作者不参与。`:'退出瞄准，炮内小人继续留岗并消耗饥饿，饿了再去吃饭。');
     if(e.type==='cannonHit'){
       bursts.push(makeCannonDebris(e,model.view,CONFIG.ground));
       const amplitude=(e.kind==='child'?5:9)*(width<600?.7:1),previous=impactShakeAt(e.time-impactShake.time,impactShake.amplitude,impactShake.duration??CONFIG.impactDuration);
@@ -463,10 +596,10 @@ function handleEvents(){
     }
     flames.event(e,model);
     if(e.type==='summon'&&guidanceFor(activeLevel).tutorial){
-      if(tutorialIntroPending){earlyTutorial.summoned=true;if(e.meteor.kind==='bomb')earlyTutorial.bomb=true;else earlyTutorial.normal=true;}
+      if(tutorialIntroPending){earlyTutorial.summoned=true;if(e.meteor.kind==='bomb')earlyTutorial.bomb=true;else if(e.meteor.kind==='man')earlyTutorial.normal=true;}
       else{
         radarHint.erase(e.time,reduced);
-        if(e.meteor.kind!=='bomb'&&cutHint.startAt===null&&!tutorialFeedback.praised){cutHint.start(e.time,reduced);announce('按住划动，切开空中的曼字陨石。');}
+        if(e.meteor.kind==='man'&&cutHint.startAt===null&&!tutorialFeedback.praised){cutHint.start(e.time,reduced);announce('按住划动，切开空中的曼字陨石。');}
         if(e.meteor.kind==='bomb'&&tutorialFeedback.onBomb(e.time,reduced))announce('慢字号陨石，不要打！');
       }
     }
@@ -497,14 +630,22 @@ function handleEvents(){
     }
     if(e.type==='recall')announce('召回开始。非工作者立即出发，工作者每隔一秒离岗。');
     if(e.type==='release')announce('小人出洞，恢复自动行动。');
-    if(e.type==='end')finish();
+    if(e.type==='end')finish(e);
   }
 }
 function updateHud(force=false){
   if(!force&&model.realTime-hudStamp<.07)return;hudStamp=model.realTime;
-  document.querySelector('.playfield').dataset.state=model.status;
-  const seconds=Math.ceil(model.remaining);$('time').textContent=`${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
-  document.querySelector('.time-metric').classList.toggle('urgent',seconds<=10);
+  const field=document.querySelector('.playfield');
+  field.dataset.state=model.status;field.dataset.bossFlight=String(model.blackHawkEnabled);
+  $('score-panel').setAttribute('aria-label',model.blackHawkEnabled?'武器状态':'得分与分数来源');
+  $('tuner-score').hidden=model.blackHawkEnabled;
+  $('tuner-boss-skill').hidden=route!=='game'||!model.blackHawkEnabled;
+  $('tuner-boss-elbow').hidden=$('tuner-boss-skill').hidden;
+  $('tuner-boss-death').hidden=$('tuner-boss-skill').hidden;
+  if(Number.isFinite(model.remaining)){
+    const seconds=Math.ceil(model.remaining);$('time').textContent=`${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
+    document.querySelector('.time-metric').classList.toggle('urgent',seconds<=10);
+  }
   scoreHud.feedback.retarget(model.score);$('cuts').textContent=String(model.cuts);$('alive').textContent=String(model.alive);
   $('shelter-count').textContent=`洞内 ${model.sheltered} 人`;
   $('work-count').textContent=`工作 ${model.workers} 人`;
@@ -545,11 +686,13 @@ function updateShieldControl(){
 function updateCannonControls(){
   const root=$('cannon-controls');root.hidden=route!=='game'||!model.cannon.enabled;if(root.hidden){cannonCoolingHUD.update(false,reduced,true);return;}
   const g=cannonGeometry(model.view,CONFIG.ground),s=model.cannonState;
+  root.dataset.weapon=model.weaponType;
   const p=cameraPoint(g.pivot),size=clamp(50*g.scale*camera.z,24,48),compact=width<=620||height<=520;
   root.style.setProperty('--cannon-button-size',`${size}px`);root.style.left=`${clamp(p.x,size/2+3,width-size/2-3)}px`;root.style.top=`${clamp(p.y,size/2+3,height-size/2-(compact?2:7)-(compact?18:20)-3)}px`;
   root.dataset.aiming=String(s.aiming);$('cannon-crew-count').textContent=`${s.crew} / 6`;$('cannon-crew-status').textContent=s.reserved>s.crew?' · 入驻中':'';
   const button=$('cannon-toggle');button.disabled=model.status!=='playing'||sceneTransition.active;button.setAttribute('aria-pressed',String(s.aiming));button.setAttribute('aria-label',s.aiming?'退：退出瞄准并解除征召':'射：征召小人并进入瞄准模式');
-  $('cannon-heat').setAttribute('aria-valuenow',String(Math.round(s.heatProgress*100)));$('cannon-heat').setAttribute('aria-label',s.overheated?'防空炮过热，正在冷却':'防空炮过热值');drawCannonHeat(cannonHeatContext,s,s.overheated?'#b52e3e':ink);
+  $('cannon-cooling-label').textContent=model.weaponType==='laser'?'激光冷却':'开炮冷却';
+  $('cannon-heat').setAttribute('aria-valuenow',String(Math.round(s.heatProgress*100)));$('cannon-heat').setAttribute('aria-label',`${weaponName(model.weaponType)}${s.overheated?'过热，正在冷却':'过热值'}`);drawCannonHeat(cannonHeatContext,s,s.overheated?'#b52e3e':ink);
   cannonCoolingHUD.update(s.aiming&&['playing','paused'].includes(model.status),reduced);
 }
 function mechanismTargets(){
@@ -566,10 +709,15 @@ function farmFrame(sync=false){
 function clearRoundScene(){
   $('results-backdrop').hidden=true;
   roundEnding.reset();
+  blackHawkEffects.clear();
+  foodEffects.clear();
   farmMotion.reset();
   farmFeedback.reset();
+  scoreMeteorEffects.clear();
+  focusBuffer.width=focusBuffer.height=1;
   volcanoSplash.clear();
-  nuclearEffects.clear();nuclearWarning.clear();nuclearHud.reset();clearNuclearLayer();
+  nuclearEffects.clear();nuclearWarning.clear();nuclearHud.reset();clearOverheadEffects();
+  bossIntroPending=false;
   chapterGuidance.stop();
   mechanismGuidance.stop();
   tutorialFeedback.reset();
@@ -586,13 +734,18 @@ function prepareRound(){
   $('overlay').hidden=true;$('intro').hidden=false;$('results').hidden=true;
   updateHud(true);
 }
-function activateRound(){
-  model.status='playing';chapterGuidance.start(activeLevel,model.realTime,reduced);
-  mechanismGuidance.start(activeLevel,model.realTime,reduced);
+function startRoundGuidance(){
+  chapterGuidance.start(activeLevel,model.realTime,reduced);
+  mechanismGuidance.start(activeLevel,model.realTime,reduced,model.weaponType);
   tutorialIntroPending=guidanceFor(activeLevel).tutorial&&!!chapterGuidance.drawing;
   if(guidanceFor(activeLevel).tutorial&&!tutorialIntroPending)radarHint.start(model.realTime,reduced);
-  lastFrame=performance.now();updateHud(true);canvas.focus({preventScroll:true});
   announce(guidanceFor(activeLevel).chapter?.config.text.replace('\n','，')??'游戏开始，三分钟。直接点按红色雷达召唤。');
+}
+function activateRound(){
+  model.status='playing';
+  bossIntroPending=model.blackHawkEnabled;
+  if(!bossIntroPending)startRoundGuidance();
+  lastFrame=performance.now();updateHud(true);canvas.focus({preventScroll:true});
 }
 function start(){
   if(!ready||sceneTransition.active)return;prepareRound();activateRound();
@@ -632,17 +785,27 @@ function returnToLevels(){
     const id=levelScene.selected??LEVELS[0].id;levelButtons.get(id).focus({preventScroll:true});announce('已返回选关。');
   });
 }
+function confirmResults(){
+  if($('results').dataset.outcome!=='win')returnToLevels();
+  else if(route==='game'&&roundEnding.phase==='results')changeSceneWithTransition(()=>{
+    route='credits';creditsSky=transitionSky;
+    $('overlay').hidden=true;clearOverheadEffects();credits.show(glyph,!dark);
+  },()=>{
+    $('credits').focus({preventScroll:true});credits.play();
+  },{closeOnly:true});
+}
 function resetToStart(){
+  credits.reset();creditsSky=null;
   route='title';activeLevel=null;levelScene.reset();model.reset();clearRoundScene();opening.reset();titleSky=new BackgroundSky();
   $('intro').inert=false;$('intro').style.transform='';$('intro').style.opacity='';$('start-button').disabled=!ready;$('menu-button').disabled=false;
   $('cut-tuner').hidden=true;$('tuning-button').setAttribute('aria-expanded','false');
   $('overlay').hidden=false;$('intro').hidden=false;$('results').hidden=true;
   updateHud(true);
 }
-function changeSceneWithTransition(changeScene,onComplete=()=>{}){
+function changeSceneWithTransition(changeScene,onComplete=()=>{},{closeOnly=false}={}){
   if(sceneTransition.active||opening.mode==='transition'||roundEnding.pending)return false;
   const field=document.querySelector('.playfield');
-  if(!sceneTransition.begin({dark,reduced,onCovered:changeScene,onComplete:()=>{
+  if(!sceneTransition.begin({dark:route==='credits'?!dark:dark,reduced,closeOnly,onCovered:changeScene,onComplete:()=>{
     field.inert=false;field.removeAttribute('aria-busy');onComplete();
   }}))return false;
   levelDrag.stop();
@@ -663,9 +826,14 @@ function stepSceneTransition(dt){
   if(document.hidden||sceneTransition.paused)return;
   transitionSky.step(dt,sceneTransition.reduced);sceneTransition.step(dt);
 }
+function stepCredits(dt){
+  if(document.hidden)return;
+  creditsSky.step(dt,reduced);credits.step(dt);
+}
 function openMenu(reason='menu'){
-  if(sceneTransition.active||opening.mode==='transition'||roundEnding.pending)return;
+  if(route==='credits'||sceneTransition.active||opening.mode==='transition'||roundEnding.pending)return;
   model.cannon.trigger=false;
+  model.cannon.cancelFire?.(model.realTime);
   levelDrag.stop();
   if(model.status==='playing'){model.status='paused';pauseReason=reason;trail=[];bladeActive=false;lastPoint=null;keys.clear();announce('游戏暂停，计时停止。');}
   if(!$('game-menu').open)$('game-menu').showModal();
@@ -684,9 +852,11 @@ function setPaused(paused,reason='manual'){
   if(paused&&model.status==='playing')openMenu(reason);
   else if(!paused&&model.status==='paused')closeMenu();
 }
-function finish(){
+function finish(event){
+  const won=event?.bossDefeated===true,lost=event?.foodDestroyed===true,decisive=won||lost;
   model.cannon.trigger=false;
   nuclearWarning.clear();
+  bossIntroPending=false;
   clearTutorialIntro();
   chapterGuidance.stop();
   mechanismGuidance.stop();
@@ -694,25 +864,41 @@ function finish(){
   scoreHud.settle(model.score);
   radarHint.stop();cutHint.stop();
   bladeActive=false;trail=[];lastPoint=null;keys.clear();keyboardVisible=false;
-  const finale=roundEnding.start(model,reduced);
+  const endingDelay=won?blackHawkEffects.victoryDelay(model.sceneTime):lost?foodBreakDelay(reduced):0;
+  const finale=roundEnding.start(model,reduced,endingDelay);
   for(const burst of finale)bursts.push({...makeCannonDebris(burst,model.view,CONFIG.ground),roundEnd:true});
   for(const id of flames.trails.keys())flames.end(id,'roundEnd',model.sceneTime);
-  if(finale.length)impactShake={time:model.realTime,amplitude:Math.min(16,8+Math.sqrt(finale.length)*2)*(width<600?.7:1),duration:.32};
+  if(finale.length&&!lost)impactShake={time:model.realTime,amplitude:Math.min(16,8+Math.sqrt(finale.length)*2)*(width<600?.7:1),duration:.32};
   $('cut-tuner').hidden=true;$('tuning-button').setAttribute('aria-expanded','false');
   $('overlay').hidden=true;$('intro').hidden=true;$('results').hidden=true;
+  const results=$('results');
+  if(decisive)results.dataset.outcome=won?'win':'loss';else delete results.dataset.outcome;
+  $('results-levels-button').textContent=won?'确认':'返回选关';
+  $('results-kicker').textContent=won?'黑曼巴直升机已击败':lost?'饭桶已碎裂':'时间到';
+  $('results-title').textContent=won?'胜利':lost?'失败':'这一局，留下了多少人？';
+  $('final-score').hidden=decisive;$('results-breakdown').hidden=decisive;
+  if(decisive){announce(won?'胜利，黑曼巴直升机已击败。':'失败，饭桶已碎裂。');updateHud(true);return;}
   let best=0;try{best=Number(localStorage.getItem('man-best')||0);best=Math.max(best,model.score);localStorage.setItem('man-best',String(best));}catch{best=model.score;}
   $('final-score').textContent=String(model.score);$('final-cuts').textContent=`${model.cuts} × ${model.scoreRules.cutPoints}`;$('final-alive').textContent=`${model.alive} × ${model.scoreRules.survivorPoints}`;$('best-score').textContent=String(best);
   $('final-penalty').textContent=`−${model.bombPenalty}`;
   announce(`时间到，得分${model.score}，存活${model.alive}人。`);updateHud(true);
-  $('cannon-result').hidden=!model.cannon.enabled;$('final-cannon').textContent=String(model.cannonBonus);
+  $('cannon-result').hidden=!model.cannon.enabled;$('cannon-result').querySelector('span').textContent=`${weaponName(model.weaponType)}击落`;$('final-cannon').textContent=String(model.cannonBonus);
   $('farm-result').hidden=!model.farmState.enabled;$('final-farm').textContent=String(model.farmBonus);
+  $('score-meteor-result').hidden=!model.scoreMeteorsEnabled&&!model.scoreCutBonus&&!model.scoreFragmentBonus;
+  $('final-score-cuts').textContent=String(model.scoreCutBonus);$('final-score-fragments').textContent=String(model.scoreFragmentBonus);
 }
 function stepRoundEnding(dt){
   if(document.hidden||$('game-menu').open)return;
-  if(roundEnding.step(dt)){
-    $('overlay').hidden=false;$('results-backdrop').hidden=false;$('results').hidden=false;updateHud(true);
-    $('results-levels-button').focus({preventScroll:true});
+  const showResults=roundEnding.step(dt);
+  if(!showResults&&!roundEnding.pending)return;
+  const results=$('results'),backdrop=$('results-backdrop');
+  const fadeIntoVictory=!reduced&&results.dataset.outcome==='win'&&roundEnding.delay-roundEnding.elapsed<=.46;
+  if(backdrop.hidden&&(showResults||fadeIntoVictory)){
+    $('overlay').hidden=false;backdrop.hidden=false;
   }
+  if(!showResults)return;
+  results.hidden=false;updateHud(true);
+  $('results-levels-button').focus({preventScroll:true});
 }
 function localPoint(event){const r=canvas.getBoundingClientRect();return{x:event.clientX-r.left,y:event.clientY-r.top};}
 const radarTowerPath=new Path2D('M-12 -161 L6 -165 L35 -9 L48 0 L-9 0 L2 -10 Z');
@@ -737,7 +923,7 @@ function bladeMove(p,stamp){
     const distance=Math.hypot(p.x-lastPoint.x,p.y-lastPoint.y),dt=Math.max(.003,(stamp-lastPointerStamp)/1000),speed=distance/dt;
     if(distance>.5){
       const stroke=clamp(1.5+speed*.0025,1.5,width<600?3:4.7);
-      model.slice(lastPoint,p,stroke,m=>({...meteorPoint(m),radius:m.size*.52*charScale()*camera.z}),{speed,scaleX:width/CONFIG.width*camera.z,scaleY:height/CONFIG.height*camera.z,visualScale:charScale()*camera.z});
+      model.slice(lastPoint,p,stroke,m=>({...meteorPoint(m),radius:m.size*(m.bodyScale??1)*.52*charScale()*camera.z}),{strokeId:bladeStrokeId,speed,hawkStroke:{from:canvasToScene(lastPoint),to:canvasToScene(p),radius:stroke/camera.z},scaleX:width/CONFIG.width*camera.z,scaleY:height/CONFIG.height*camera.z,visualScale:charScale()*camera.z});
       const strength=swipeStrength(speed,CONFIG.meteorSize*charScale());
       trail.push({...p,time:model.realTime,speed,life:CUT.bladeLife+CUT.bladeExtra*strength});handleEvents();
     }
@@ -747,19 +933,19 @@ function bladeMove(p,stamp){
 canvas.addEventListener('pointerdown',e=>{
   if(model.status!=='playing'||(e.pointerType==='mouse'&&e.button!==0))return;
   e.preventDefault();canvas.setPointerCapture(e.pointerId);keyboardVisible=false;const p=localPoint(e);
-  if(model.cannon.aiming){model.aimCannon(p.x-camera.dx,p.y-camera.dy);model.cannon.trigger=true;bladeActive=false;trail=[];return;}
+  if(model.cannon.aiming){aimCannonAt(p);model.cannon.trigger=true;bladeActive=false;trail=[];return;}
   if(inRadar(p)){bladeActive=false;lastPoint=null;model.clickRadar();handleEvents();updateHud(true);return;}
-  bladeActive=true;lastPoint=null;trail=[];bladeMove(p,e.timeStamp);
+  bladeActive=true;bladeStrokeId++;lastPoint=null;trail=[];bladeMove(p,e.timeStamp);
 });
 canvas.addEventListener('pointermove',e=>{
   const p=localPoint(e);canvas.style.cursor=model.status==='playing'&&inRadar(p)?'pointer':'default';
-  if(model.cannon.aiming&&model.status==='playing'){model.aimCannon(p.x-camera.dx,p.y-camera.dy);canvas.style.cursor='crosshair';return;}
+  if(model.cannon.aiming&&model.status==='playing'){aimCannonAt(p);canvas.style.cursor='crosshair';return;}
   if(!bladeActive||model.status!=='playing')return;
   const samples=e.getCoalescedEvents?.();
   for(const sample of samples?.length?samples:[e])bladeMove(localPoint(sample),sample.timeStamp);
   updateHud();
 });
-function bladeEnd(){bladeActive=false;lastPoint=null;model.cannon.trigger=false;}
+function bladeEnd(){bladeActive=false;lastPoint=null;model.cannon.trigger=false;model.cannon.cancelFire?.(model.realTime);}
 canvas.addEventListener('pointerup',bladeEnd);canvas.addEventListener('pointercancel',bladeEnd);
 $('recall-button').addEventListener('click',()=>{model.recall();handleEvents();updateHud(true);});
 $('release-button').addEventListener('click',()=>{model.release();handleEvents();updateHud(true);});
@@ -773,7 +959,7 @@ $('cannon-toggle').addEventListener('click',()=>{
 });
 $('start-button').addEventListener('click',()=>ready?beginOpening():loadGlyph());
 $('menu-restart-button').addEventListener('click',restart);
-$('results-levels-button').addEventListener('click',returnToLevels);
+$('results-levels-button').addEventListener('click',confirmResults);
 $('menu-button').addEventListener('click',()=>openMenu());$('menu-close').addEventListener('click',closeMenu);
 $('return-start-button').addEventListener('click',returnToStart);
 $('return-levels-button').addEventListener('click',returnToLevels);
@@ -788,7 +974,7 @@ $('game-menu').addEventListener('cancel',e=>{e.preventDefault();closeMenu();});
 $('game-menu').addEventListener('click',e=>{const r=$('game-menu').getBoundingClientRect();if(e.target===$('game-menu')&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom))closeMenu();});
 $('theme-toggle').addEventListener('click',()=>{dark=!dark;theme();});
 motionPreference.addEventListener('change',e=>{reduced=e.matches;motionState();render();});
-document.addEventListener('visibilitychange',()=>{opening.paused=document.hidden;sceneTransition.paused=document.hidden;lastFrame=performance.now();if(document.hidden)setPaused(true,'hidden');});
+document.addEventListener('visibilitychange',()=>{opening.paused=document.hidden||$('weapon-menu').open;sceneTransition.paused=document.hidden;credits.setPaused(document.hidden);lastFrame=performance.now();if(document.hidden)setPaused(true,'hidden');});
 window.addEventListener('blur',()=>{keys.clear();bladeEnd();});
 window.addEventListener('keydown',e=>{
   if(sceneTransition.active||opening.mode==='transition'){if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&['Space','KeyP','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();return;}
@@ -799,22 +985,23 @@ window.addEventListener('keydown',e=>{
     e.preventDefault();keys.add(e.key);keyboardVisible=true;
   }
 });
-window.addEventListener('keyup',e=>{keys.delete(e.key);if(e.code==='Space')model.cannon.trigger=false;if(e.key==='Shift')lastPoint=null;});
+window.addEventListener('keyup',e=>{keys.delete(e.key);if(e.code==='Space'){model.cannon.trigger=false;model.cannon.cancelFire?.(model.realTime);}if(e.key==='Shift')lastPoint=null;});
 function keyboardStep(dt){
   if(!keyboardVisible||model.status!=='playing')return;
   const p={...keyboardPoint},speed=300*dt;
   keyboardPoint.x=clamp(p.x+(keys.has('ArrowRight')?speed:0)-(keys.has('ArrowLeft')?speed:0),0,width);
   keyboardPoint.y=clamp(p.y+(keys.has('ArrowDown')?speed:0)-(keys.has('ArrowUp')?speed:0),0,height);
-  if(model.cannon.aiming){model.aimCannon(keyboardPoint.x-camera.dx,keyboardPoint.y-camera.dy);return;}
+  if(model.cannon.aiming){aimCannonAt(keyboardPoint);return;}
   if(keys.has('Shift')){if(!lastPoint)lastPoint=p;bladeMove({...keyboardPoint},performance.now());}else lastPoint=null;
 }
 function tick(now){
   const dt=Math.max(0,(now-lastFrame)/1000);lastFrame=now;
   if(!qaHeld){
     if(sceneTransition.active)stepSceneTransition(dt);
+    else if(route==='credits')stepCredits(dt);
     else if(opening.mode!=='game')stepTitle(dt);
     else if(route==='levels')stepLevels(dt);
-    else if(model.status==='playing'){scoreHud.step(dt);sky.step(Math.min(dt,.1),reduced);model.step(dt);keyboardStep(Math.min(dt,.05));handleEvents();updateHud();}
+    else if(model.status==='playing'){scoreHud.step(dt);sky.step(Math.min(dt,.1)*model.timeScale,reduced);model.step(dt);keyboardStep(Math.min(dt,.05));handleEvents();updateHud();}
     else if(model.status==='ended')stepRoundEnding(dt);
   }
   render();requestAnimationFrame(tick);
@@ -833,7 +1020,8 @@ async function loadGlyph(){
   }
 }
 // A read-only probe exposes observable state; QA uses real pointer gestures for cuts.
-window.__MAN__={get snapshot(){return model.snapshot();},get camera(){return {...camera};},get viewport(){return{width,height,artScale:artScale(),charScale:charScale()};},get reduced(){return reduced;},get pauseReason(){return pauseReason;},get meteors(){return model.meteors.map(m=>({id:m.id,...meteorPoint(m),size:m.size*charScale()*camera.z}));},get effects(){return bursts.map(b=>({type:b.type,particles:b.type==='meteor'?84:b.type==='man'?16:12}));},
+window.__MAN__={get snapshot(){return model.snapshot();},get camera(){return {...camera};},get viewport(){return{width,height,artScale:artScale(),charScale:charScale()};},get reduced(){return reduced;},get pauseReason(){return pauseReason;},get meteors(){return model.meteors.map(m=>({id:m.id,...meteorPoint(m),size:m.size*(m.bodyScale??1)*charScale()*camera.z}));},get effects(){return bursts.map(b=>({type:b.type,particles:b.type==='meteor'?84:b.type==='man'?16:12}));},
+  get scoreMeteorFeedback(){return{uiHidden:scoreFrenzyUIHidden(),shake:scoreMeteorEffects.shakeAt(effectTime(),reduced),combos:[...scoreMeteorEffects.combos].map(([id,combo])=>({id,...combo.snapshot(model.realTime,reduced)})),bursts:scoreMeteorEffects.bursts.map(b=>({type:b.type,time:b.time,radius:b.radius,flashDuration:b.flashDuration}))};},
   get route(){return route;},get activeLevel(){return activeLevel;},get levelSelection(){return levelScene.snapshot($('level-map').clientWidth,Math.max(1,$('level-map').clientHeight),reduced);},
   get levelDrag(){return levelDrag.snapshot();},
   get shield(){const circle=model.shieldGeometry();return{...model.shieldState,circle:circle?{...cameraPoint(circle),radius:circle.radius*camera.z}:null};},
@@ -852,8 +1040,10 @@ window.__MAN__={get snapshot(){return model.snapshot();},get camera(){return {..
   get chapterHint(){return{...chapterGuidance.snapshot(model.realTime,reduced),layout:chapterGuidance.drawing?chapterHintLayout(model.view,chapterGuidance.drawing):null,tutorial:guidanceFor(activeLevel).tutorial};},
   get mechanismHint(){return mechanismGuidance.snapshot(model.realTime,reduced,model.view,mechanismTargets());},
   get roundEnding(){return roundEnding.snapshot();},
+  get credits(){return credits.snapshot();},
   get farm(){return farmFrame();},
   get volcano(){return{...model.volcanoState,splash:volcanoSplash.snapshot(effectSceneTime()).length};},
+  get blackHawk(){const frame=model.blackHawkState;return frame?{...frame,mounts:blackHawkMounts(frame).map((mount,index)=>({...mount,count:model.blackHawk.hooks[index].links.length}))}:null;},
   get nuclear(){return{...model.nuclearState,warning:nuclearWarning.snapshot(model.realTime,reduced),flash:nuclearEffects.flash(effectSceneTime(),reduced),clouds:nuclearEffects.blasts.length};},
   get bombs(){return{assetsReady:!!bombPath,parts:bombGlyph?.parts.map(p=>p.label)??[],charges:model.meteors.filter(m=>m.arm).map(m=>({id:m.id,...bombChargeAt(m,model.realTime)}))};},
   get bomblets(){return model.bomblets.map(c=>({id:c.id,part:c.part,...cameraPoint(bombletView(c,model.view)),angle:c.angle}));},
@@ -862,9 +1052,19 @@ window.__MAN__={get snapshot(){return model.snapshot();},get camera(){return {..
   get radio(){return radioWaves(radioState(),{art:artScale()*camera.z,reduced},project);},
   get variants(){return VARIANTS;},get fonts(){return [...glyphs.keys()];},get radar(){return{growth:model.progression.radarFactor,originX:radarOriginX(model.radarScale),pulseTime:model.radarPulse,waves:this.radio.length>0,...radarPose()};}};
 if(new URLSearchParams(location.search).has('qa')){
-  window.__MAN_QA__={model,reset:start,hold:value=>{qaHeld=value;lastFrame=performance.now();},finishOpening:()=>{if(opening.mode==='transition')stepTitle(opening.duration-opening.time);updateHud(true);render();},finishSceneTransition:()=>{if(sceneTransition.active)stepSceneTransition(sceneTransition.duration-sceneTransition.time);updateHud(true);render();},step:dt=>{if(sceneTransition.active)stepSceneTransition(dt);else if(opening.mode!=='game')stepTitle(dt);else if(route==='levels')stepLevels(dt);else if(model.status==='ended')stepRoundEnding(dt);else{if(model.status==='playing'){scoreHud.step(dt);sky.step(dt,reduced);}model.step(dt);handleEvents();}updateHud(true);render();},spawn:(x,y,type)=>model.spawnMeteor(x,y,type),spawnBomb:(x,y)=>model.spawnMeteor(x,y,undefined,'bomb')};
+  window.__MAN_QA__={model,reset:start,hold:value=>{qaHeld=value;lastFrame=performance.now();},finishOpening:()=>{if(opening.mode==='transition')stepTitle(opening.duration-opening.time);updateHud(true);render();},finishSceneTransition:()=>{if(sceneTransition.active)stepSceneTransition(sceneTransition.duration-sceneTransition.time);updateHud(true);render();},step:dt=>{if(sceneTransition.active)stepSceneTransition(dt);else if(route==='credits')stepCredits(dt);else if(opening.mode!=='game')stepTitle(dt);else if(route==='levels')stepLevels(dt);else if(model.status==='ended')stepRoundEnding(dt);else{if(model.status==='playing'){scoreHud.step(dt);sky.step(dt*model.timeScale,reduced);}model.step(dt);handleEvents();}updateHud(true);render();},spawn:(x,y,type)=>model.spawnMeteor(x,y,type),spawnBomb:(x,y)=>model.spawnMeteor(x,y,undefined,'bomb'),spawnScore:(x,y)=>model.spawnMeteor(x,y,undefined,'score')};
 }
-function tuningSummon(kind){if(!ready||sceneTransition.active||roundEnding.pending)return false;if(model.status==='ready'||model.status==='ended')start();else if(model.status==='paused')closeMenu();model.spawnMeteor(undefined,undefined,undefined,kind);handleEvents();updateHud(true);return true;}
+function tuningSummon(kind){if(!ready||sceneTransition.active||roundEnding.pending)return false;if(model.status==='ready'||model.status==='ended')start();else if(model.status==='paused')closeMenu();if(!model.spawnMeteor(undefined,undefined,undefined,kind))return false;handleEvents();updateHud(true);return true;}
 function tuningNuclear(){if(!ready||sceneTransition.active||roundEnding.pending||!model.nuclear.enabled)return false;if(model.status==='paused')closeMenu();if(!model.requestNuclear(true))return false;handleEvents();updateHud(true);render();return true;}
-installCutTuner({summon:()=>tuningSummon('man'),summonBomb:()=>tuningSummon('bomb'),launchNuclear:tuningNuclear,enableMotion:()=>{reduced=false;motionState();},onChange:()=>{if(ready)render();}});
+function tuningBossSkill(kind){
+  if(!ready||route!=='game'||sceneTransition.active||roundEnding.pending||!model.blackHawkEnabled)return false;
+  if(model.status==='paused')closeMenu();
+  if(!model.requestBlackHawkSkill(kind))return false;
+  render();return true;
+}
+function tuningBossDeath(){
+  if(!ready||route!=='game'||sceneTransition.active||roundEnding.pending||!model.requestBlackHawkDeath())return false;
+  handleEvents();render();return true;
+}
+installCutTuner({summon:()=>tuningSummon('man'),summonBomb:()=>tuningSummon('bomb'),summonScore:()=>tuningSummon('score'),launchNuclear:tuningNuclear,triggerBossSkill:tuningBossSkill,triggerBossDeath:tuningBossDeath,enableMotion:()=>{reduced=false;motionState();},onChange:()=>{if(ready)render();}});
 theme();motionState();resize();loadGlyph();requestAnimationFrame(tick);updateHud(true);
